@@ -1,0 +1,15 @@
+apiVersion: odoo.bemade.org/v1
+kind: OdooInstance
+metadata:
+  name: my-odoo
+spec:
+  image: docker.bemade.org/bemade/odoo18.0e-bemade:2025-03-16
+  adminPassword: my-test-password
+  filestore:
+    storageSize: 2Gi
+  configOptions:
+    limit_time_real: "0"
+    limit_time_cpu: "0"
+  ingress:
+    host: test.odoo.bemade.org
+    issuer: letsencrypt-dns
