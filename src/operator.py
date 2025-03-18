@@ -1,23 +1,20 @@
 import kopf
 from handlers import OdooHandler
-import logging
-
-logger = logging.getLogger("odoo-operator")
 
 
-@kopf.on.create("odoo")
+@kopf.on.create("odooinstance")
 def create_fn(body, **kwargs):
     handler = OdooHandler(body, **kwargs)
     handler.on_create()
 
 
-@kopf.on.update("odoo")
+@kopf.on.update("odooinstance")
 def update_fn(body, **kwargs):
     handler = OdooHandler(body, **kwargs)
     handler.on_update()
 
 
-@kopf.on.delete("odoo")
+@kopf.on.delete("odooinstance")
 def delete_fn(body, **kwargs):
     handler = OdooHandler(body, **kwargs)
     handler.on_delete()

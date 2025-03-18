@@ -70,7 +70,7 @@ class OdooHandler:
     @property
     def owner_reference(self):
         return client.V1OwnerReference(
-            api_version="odoo.bemade.org/v1",
+            api_version="bemade.org/v1",
             kind="OdooInstance",
             name=self.name,
             uid=self.uid,
@@ -600,7 +600,7 @@ class OdooHandler:
                     "routes": [
                         {
                             "kind": "Rule",
-                            "match": f"Host(`{self.name}.cluster.local`)",
+                            "match": f"Host(`{self.spec.get('ingress', {}).get('host')}`)",
                             "middlewares": middlewares,
                             "services": [
                                 {

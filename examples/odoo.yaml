@@ -1,4 +1,4 @@
-apiVersion: odoo.bemade.org/v1
+apiVersion: bemade.org/v1
 kind: OdooInstance
 metadata:
   name: my-odoo

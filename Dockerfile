@@ -6,4 +6,4 @@ RUN pip install -r requirements.txt
 
 COPY src /app/src
 
-CMD ["kopf", "run", "/app/src/operator.py", "--verbose"]
+CMD ["kopf", "run", "/app/src/operator.py", "--verbose", "--all-namespaces"]
