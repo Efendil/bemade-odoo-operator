@@ -43,7 +43,7 @@ class Deployment(ResourceHandler):
                 namespace=self.namespace,
                 body=self.resource,
             )
-            
+
     def scale(self, replicas):
         """Scale the deployment to the specified number of replicas."""
         try:
@@ -52,17 +52,17 @@ class Deployment(ResourceHandler):
                 name=self.name,
                 namespace=self.namespace,
             )
-            
+
             # Update the replicas
             deployment.spec.replicas = replicas
-            
+
             # Apply the update
             client.AppsV1Api().patch_namespaced_deployment(
                 name=self.name,
                 namespace=self.namespace,
                 body={"spec": {"replicas": replicas}},
             )
-            
+
             return True
         except client.exceptions.ApiException as e:
             if e.status != 404:
@@ -95,7 +95,7 @@ class Deployment(ResourceHandler):
 
         # Get replicas from spec or default to 1
         replicas = self.spec.get("replicas", 1)
-        
+
         spec = client.V1DeploymentSpec(
             replicas=replicas,
             selector=client.V1LabelSelector(match_labels={"app": self.name}),
@@ -121,9 +121,9 @@ class Deployment(ResourceHandler):
                         ),
                     ],
                     security_context=client.V1PodSecurityContext(
-                        run_as_user=1001,
-                        run_as_group=1001,
-                        fs_group=1001,
+                        run_as_user=100,
+                        run_as_group=101,
+                        fs_group=101,
                     ),
                     affinity=self.spec.get(
                         "affinity", self.defaults.get("affinity", {})
