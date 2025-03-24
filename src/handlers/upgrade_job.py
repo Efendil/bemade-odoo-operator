@@ -194,6 +194,8 @@ class UpgradeJob(ResourceHandler):
             else {}
         )
 
+        db_host = os.environ["DB_HOST"]
+        db_port = os.environ["DB_PORT"]
         # Create the job spec
         job_spec = client.V1JobSpec(
             template=client.V1PodTemplateSpec(
@@ -217,9 +219,6 @@ class UpgradeJob(ResourceHandler):
                             ),
                         ),
                     ],
-                    # Don't set security context - let the container run as the default user
-                    # The Odoo image is designed to run as the 'odoo' user which is properly set up in the image
-                    # Using a numeric UID without proper passwd entry causes getpass.getuser() to fail
                     containers=[
                         client.V1Container(
                             name=f"odoo-upgrade-{self.name}",
@@ -249,19 +248,15 @@ class UpgradeJob(ResourceHandler):
                             ],
                             env=[
                                 client.V1EnvVar(
-                                    name="DB_HOST",
-                                    value_from=client.V1EnvVarSource(
-                                        field_ref=client.V1ObjectFieldSelector(
-                                            field_path="spec.nodeName"
-                                        )
-                                    ),
+                                    name="HOST",
+                                    value=db_host,
                                 ),
                                 client.V1EnvVar(
-                                    name="DB_PORT",
-                                    value="5432",
+                                    name="PORT",
+                                    value=db_port,
                                 ),
                                 client.V1EnvVar(
-                                    name="DB_USER",
+                                    name="USER",
                                     value_from=client.V1EnvVarSource(
                                         secret_key_ref=client.V1SecretKeySelector(
                                             name=f"{self.name}-odoo-user",
@@ -270,7 +265,7 @@ class UpgradeJob(ResourceHandler):
                                     ),
                                 ),
                                 client.V1EnvVar(
-                                    name="DB_PASSWORD",
+                                    name="PASSWORD",
                                     value_from=client.V1EnvVarSource(
                                         secret_key_ref=client.V1SecretKeySelector(
                                             name=f"{self.name}-odoo-user",
