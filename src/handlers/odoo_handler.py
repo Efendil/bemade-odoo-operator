@@ -10,7 +10,10 @@ from .tls_cert import TLSCert
 from .deployment import Deployment
 from .service import Service
 from .ingress_routes import IngressRouteHTTP, IngressRouteHTTPS, IngressRouteWebsocket
+from .upgrade_job import UpgradeJob
 from .resource_handler import ResourceHandler
+import logging
+import time
 
 
 class OdooHandler(ResourceHandler):
@@ -53,6 +56,7 @@ class OdooHandler(ResourceHandler):
         self.ingress_route_http = IngressRouteHTTP(self)
         self.ingress_route_https = IngressRouteHTTPS(self)
         self.ingress_route_websocket = IngressRouteWebsocket(self)
+        self.upgrade_job = UpgradeJob(self)
 
         # Create handlers list in the order resources should be created/updated
         self.handlers = [
@@ -68,21 +72,101 @@ class OdooHandler(ResourceHandler):
             self.ingress_route_websocket,
         ]
 
+        # The upgrade job is handled separately and not included in the main handlers list
+
     def on_create(self):
         # Create all resources in the correct order
         for handler in self.handlers:
             handler.handle_create()
 
     def on_update(self):
-        # Update all resources in the correct order
-        for handler in self.handlers:
-            handler.handle_update()
+        # Check if this is an upgrade request
+        if self._is_upgrade_request():
+            self._handle_upgrade()
+        else:
+            # Regular update - update all resources in the correct order
+            for handler in self.handlers:
+                handler.handle_update()
 
     def on_delete(self):
         # Delete resources in reverse order
         # The deployment handler will handle scaling down before deletion
         for handler in reversed(self.handlers):
             handler.handle_delete()
+
+    def _is_upgrade_request(self):
+        """Check if the update is an upgrade request."""
+        upgrade_spec = self.spec.get("upgrade", {})
+        database = upgrade_spec.get("database", "")
+        modules = upgrade_spec.get("modules", [])
+
+        return (
+            upgrade_spec and database and isinstance(modules, list) and len(modules) > 0
+        )
+
+    def _handle_upgrade(self):
+        """Handle the upgrade process."""
+        logging.info(f"Starting upgrade process for {self.name}")
+
+        # Create or update the upgrade job
+        self.upgrade_job.handle_update()
+
+        # The job will run asynchronously, and we'll check for completion
+        # in the check_upgrade_job_completion method that will be called periodically
+        logging.info(
+            f"Upgrade job created for {self.name}, will check for completion periodically"
+        )
+
+    def handle_upgrade_job_check(self):
+        """Handle checking if the upgrade job has completed.
+        This method is called by the operator's timer handler.
+        """
+        logging.info(f"Checking upgrade job for {self.name}")
+
+        try:
+            self.upgrade_job.handle_completion()
+        except Exception as e:
+            logging.error(f"Error in upgrade job completion check for {self.name}: {e}")
+
+    @classmethod
+    def from_job_info(cls, namespace, app_name):
+        """Create an OdooHandler instance from job information.
+
+        Args:
+            namespace: The namespace of the job
+            app_name: The name of the OdooInstance
+
+        Returns:
+            An OdooHandler instance or None if the OdooInstance doesn't exist
+        """
+        try:
+            # Get the OdooInstance resource
+            api = client.CustomObjectsApi()
+            try:
+                odoo_instance = api.get_namespaced_custom_object(
+                    group="bemade.org",
+                    version="v1",
+                    namespace=namespace,
+                    plural="odooinstances",
+                    name=app_name,
+                )
+
+                # Create and return a handler with the OdooInstance as the body
+                # The CustomObjectsApi returns the resource as a dictionary,
+                # which is exactly what the constructor expects
+                return cls(odoo_instance)
+
+            except client.exceptions.ApiException as e:
+                if e.status == 404:
+                    logging.warning(
+                        f"OdooInstance {app_name} not found, it may have been deleted"
+                    )
+                    return None
+                else:
+                    raise
+        except Exception as e:
+            logging.error(f"Error creating OdooHandler from job info: {e}")
+            return None
 
     @property
     def owner_reference(self):

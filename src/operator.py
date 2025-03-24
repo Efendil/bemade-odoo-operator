@@ -1,4 +1,6 @@
 import kopf
+import logging
+from kubernetes import client
 from handlers.odoo_handler import OdooHandler
 
 
@@ -18,3 +20,18 @@ def update_fn(body, **kwargs):
 def delete_fn(body, **kwargs):
     handler = OdooHandler(body, **kwargs)
     handler.on_delete()
+
+
+@kopf.timer("batch", "v1", "jobs", interval=30.0, labels={"type": "upgrade-job"})
+def check_upgrade_job_completion(name, namespace, labels, **kwargs):
+    """Check if an upgrade job has completed and delegate to OdooHandler for post-completion tasks."""
+    # Only process jobs with the upgrade-job label and app label
+    if "type" not in labels or labels["type"] != "upgrade-job" or "app" not in labels:
+        return
+
+    # Create an OdooHandler instance from the job info
+    handler = OdooHandler.from_job_info(namespace, labels["app"])
+
+    # If we got a valid handler, delegate the job check to it
+    if handler:
+        handler.handle_upgrade_job_check()
