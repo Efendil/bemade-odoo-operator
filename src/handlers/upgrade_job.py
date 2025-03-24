@@ -217,11 +217,9 @@ class UpgradeJob(ResourceHandler):
                             ),
                         ),
                     ],
-                    security_context=client.V1PodSecurityContext(
-                        run_as_user=1001,
-                        run_as_group=1001,
-                        fs_group=1001,
-                    ),
+                    # Don't set security context - let the container run as the default user
+                    # The Odoo image is designed to run as the 'odoo' user which is properly set up in the image
+                    # Using a numeric UID without proper passwd entry causes getpass.getuser() to fail
                     containers=[
                         client.V1Container(
                             name=f"odoo-upgrade-{self.name}",
