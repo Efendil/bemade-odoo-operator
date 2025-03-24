@@ -1,6 +1,7 @@
 from kubernetes import client
 import logging
 from .resource_handler import ResourceHandler, update_if_exists, create_if_missing
+import os
 
 
 class UpgradeJob(ResourceHandler):
