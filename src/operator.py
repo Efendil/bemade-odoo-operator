@@ -29,16 +29,27 @@ def configure_webhook(settings: kopf.OperatorSettings, **_):
             f"Found webhook certificates at {webhook_cert_path} and {webhook_key_path}"
         )
         # Configure webhook server settings
-        settings.admission.server = kopf.WebhookServer(
-            host=webhook_host,
-            port=webhook_port,
-            certfile=webhook_cert_path,
-            pkeyfile=webhook_key_path,
-        )
+        try:
+            settings.admission.server = kopf.WebhookServer(
+                host=webhook_host,
+                port=webhook_port,
+                certfile=webhook_cert_path,
+                pkeyfile=webhook_key_path,
+            )
+            logger.info("Webhook server configured successfully")
+
+            # Log webhook server settings
+            logger.info(f"Webhook server listening on {webhook_host}:{webhook_port}")
+        except Exception as e:
+            logger.error(f"Error configuring webhook server: {e}")
     else:
         logger.warning(
             "Webhook certificates not found. Validation webhooks will not work."
         )
+        if not os.path.exists(webhook_cert_path):
+            logger.error(f"Certificate file not found: {webhook_cert_path}")
+        if not os.path.exists(webhook_key_path):
+            logger.error(f"Key file not found: {webhook_key_path}")
 
 
 @kopf.on.create("bemade.org", "v1", "odooinstances")
@@ -66,6 +77,11 @@ def validate_fn(body, old, new, **kwargs):
     This is called by Kopf's validation webhook.
     """
     # Only validate if there's an upgrade request with a database
+    _logger.debug(f"In the validatioin webhook, body: {body}")
+    _logger.debug(f"Old spec: {old}")
+    _logger.debug(f"New spec: {new}")
+
+
     new_spec = new.get("spec", {})
     upgrade_spec = new_spec.get("upgrade", {})
     database = upgrade_spec.get("database", "")
