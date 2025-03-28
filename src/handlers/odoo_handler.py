@@ -165,13 +165,17 @@ class OdooHandler(ResourceHandler):
     def handle_upgrade_job_check(self):
         """Handle checking if the upgrade job has completed.
         This method is called by the operator's timer handler.
+
+        Returns:
+            bool: True if the job was completed and handled, False otherwise
         """
         logging.info(f"Checking upgrade job for {self.name}")
 
         try:
-            self.upgrade_job.handle_completion()
+            return self.upgrade_job.handle_completion()
         except Exception as e:
             logging.error(f"Error in upgrade job completion check for {self.name}: {e}")
+            return False
 
     def validate_database_exists(self, database_name):
         """

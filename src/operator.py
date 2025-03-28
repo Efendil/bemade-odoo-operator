@@ -88,7 +88,7 @@ def validate_fn(body, old, new, **kwargs):
 
 
 @kopf.timer("batch", "v1", "jobs", interval=30.0, labels={"type": "upgrade-job"})
-def check_upgrade_job_completion(name, namespace, labels, **kwargs):
+def check_upgrade_job_completion(name, namespace, labels, status, **kwargs):
     """Check if an upgrade job has completed and delegate to OdooHandler for post-completion tasks."""
     # Only process jobs with the upgrade-job label and app-instance label
     if (
@@ -98,12 +98,41 @@ def check_upgrade_job_completion(name, namespace, labels, **kwargs):
     ):
         return
 
+    # Skip jobs that have already been processed
+    # We'll add a label to the job when we process it
+    if status and status.conditions:
+        for condition in status.conditions:
+            if condition.type == "Complete" and condition.status == "True":
+                # Check if this job has already been handled by looking for our annotation
+                annotations = kwargs.get("meta", {}).get("annotations", {})
+                if annotations.get("odoo-operator/upgrade-handled") == "true":
+                    logger.debug(
+                        f"Skipping already handled upgrade job {name} in {namespace}"
+                    )
+                    return
+
     # Create an OdooHandler instance from the job info
     handler = OdooHandler.from_job_info(namespace, labels["app-instance"])
 
     # If we got a valid handler, delegate the job check to it
     if handler:
-        handler.handle_upgrade_job_check()
+        job_handled = handler.handle_upgrade_job_check()
+
+        # If the job was handled successfully, mark it as processed
+        if job_handled:
+            try:
+                # Add an annotation to mark this job as handled
+                patch = {
+                    "metadata": {
+                        "annotations": {"odoo-operator/upgrade-handled": "true"}
+                    }
+                }
+                client.BatchV1Api().patch_namespaced_job(
+                    name=name, namespace=namespace, body=patch
+                )
+                logger.info(f"Marked upgrade job {name} in {namespace} as handled")
+            except Exception as e:
+                logger.warning(f"Failed to mark job as handled: {e}")
 
 
 @kopf.timer("bemade.org", "v1", "odooinstances", interval=60.0)
