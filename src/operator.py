@@ -16,6 +16,10 @@ webhook_cert_path = "/etc/webhook/tls.crt"
 webhook_key_path = "/etc/webhook/tls.key"
 webhook_ca_path = "/etc/webhook/ca.crt"
 
+# Service configuration for webhook
+service_namespace = os.getenv("SERVICE_NAMESPACE", "default")
+service_name = os.getenv("SERVICE_NAME", "odoo-operator-webhook")
+
 
 @kopf.on.startup()
 def configure_webhook(settings: kopf.OperatorSettings, **_):
@@ -38,6 +42,8 @@ def configure_webhook(settings: kopf.OperatorSettings, **_):
                 certfile=webhook_cert_path,
                 pkeyfile=webhook_key_path,
                 cafile=webhook_ca_path,
+                service_name=service_name,
+                service_namespace=service_namespace,
             )
 
             # Set managed to a name for the webhook configuration
