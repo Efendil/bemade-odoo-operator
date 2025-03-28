@@ -73,7 +73,7 @@ def delete_fn(body, **kwargs):
 
 
 @kopf.on.validate("bemade.org", "v1", "odooinstances")
-def validate_fn(body, old, new, **kwargs):
+def validate(body, old, new, **kwargs):
     """
     Validate the OdooInstance resource before it is created or updated.
     This is called by Kopf's validation webhook.
