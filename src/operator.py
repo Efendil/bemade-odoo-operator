@@ -3,6 +3,7 @@ import logging
 import os
 from kubernetes import client
 from handlers.odoo_handler import OdooHandler
+from webhook_server import ServiceModeWebhookServer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -31,12 +32,17 @@ def configure_webhook(settings: kopf.OperatorSettings, **_):
         )
         # Configure webhook server settings
         try:
-            settings.admission.server = kopf.WebhookServer(
+            # Configure the webhook server with our custom ServiceModeWebhookServer
+            settings.admission.server = ServiceModeWebhookServer(
                 port=webhook_port,
                 certfile=webhook_cert_path,
                 pkeyfile=webhook_key_path,
                 cafile=webhook_ca_path,
             )
+
+            # Set managed to a name for the webhook configuration
+            # This tells Kopf to create and manage the webhook configuration
+            settings.admission.managed = "odoo-operator-webhooks"
 
             logger.info("Webhook server configured successfully")
 
@@ -79,6 +85,7 @@ def validate(body, old, new, **kwargs):
     This is called by Kopf's validation webhook.
     """
     # Only validate if there's an upgrade request with a database
+    _logger = logging.getLogger(__name__)
     _logger.debug(f"In the validatioin webhook, body: {body}")
     _logger.debug(f"Old spec: {old}")
     _logger.debug(f"New spec: {new}")
