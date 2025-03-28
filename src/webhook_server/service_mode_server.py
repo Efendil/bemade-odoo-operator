@@ -7,6 +7,9 @@ instead of a URL configuration, making it more suitable for in-cluster deploymen
 
 import logging
 import kopf
+import aiohttp.web
+import asyncio
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -115,17 +118,13 @@ class ServiceModeWebhookServer(kopf.WebhookServer):
             }
 
             if cadata is not None:
-                client_config["caBundle"] = (
-                    kopf._core.engines.admission.base64.b64encode(cadata).decode(
-                        "ascii"
-                    )
-                )
+                client_config["caBundle"] = base64.b64encode(cadata).decode("ascii")
 
             logger.info(
                 f"Using service mode for webhook configuration: {self.service_name}.{self.service_namespace}"
             )
             yield client_config
-            await kopf._core.engines.admission.asyncio.Event().wait()
+            await asyncio.Event().wait()
         finally:
             await runner.cleanup()
 
@@ -135,24 +134,16 @@ class ServiceModeWebhookServer(kopf.WebhookServer):
         async def _serve_fn(request):
             return await self._serve(fn, request)
 
-        app = kopf._core.engines.admission.aiohttp.web.Application()
-        app.add_routes(
-            [
-                kopf._core.engines.admission.aiohttp.web.post(
-                    f"{path}/{{id:.*}}", _serve_fn
-                )
-            ]
-        )
+        app = aiohttp.web.Application()
+        app.add_routes([aiohttp.web.post(f"{path}/{{id:.*}}", _serve_fn)])
         return app
 
     def _setup_runner(self, app):
         """Set up the application runner for the webhook server."""
-        return kopf._core.engines.admission.aiohttp.web.AppRunner(
-            app, handle_signals=False
-        )
+        return aiohttp.web.AppRunner(app, handle_signals=False)
 
     def _setup_site(self, runner, addr, port, context):
         """Set up the TCP site for the webhook server."""
-        return kopf._core.engines.admission.aiohttp.web.TCPSite(
+        return aiohttp.web.TCPSite(
             runner, addr, port, ssl_context=context, reuse_port=True
         )
