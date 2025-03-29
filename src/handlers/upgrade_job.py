@@ -139,13 +139,26 @@ class UpgradeJob(ResourceHandler):
 
     def should_upgrade(self):
         """Check if an upgrade should be performed."""
-        return (
-            self.upgrade_spec
-            and self.database
-            and isinstance(self.modules, list)
-            and len(self.modules) > 0
-            and (not self.resource or self.is_completed)
-        )
+        # Basic validation that this is a valid upgrade request
+        if not (self.upgrade_spec 
+                and self.database 
+                and isinstance(self.modules, list) 
+                and len(self.modules) > 0):
+            return False
+            
+        # If we have a resource, check if it's still running
+        if self.resource:
+            # If the job is completed, we can proceed with cleanup
+            # but we shouldn't create a new job yet - that will happen
+            # after the upgrade spec is removed and then added again
+            if self.is_completed:
+                return False
+                
+            # If the job is still running, don't create a new one
+            return False
+            
+        # No existing job, so we can create one
+        return True
 
     def _check_job_completed(self):
         """Check if the upgrade job has completed successfully."""
@@ -184,6 +197,9 @@ class UpgradeJob(ResourceHandler):
 
         # Delete the completed job
         self._cleanup_completed_job()
+        
+        # Clear the resource reference to prevent re-processing
+        self._resource = None
 
         logging.info(f"Upgrade process completed for {self.name}")
         return True
