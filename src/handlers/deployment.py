@@ -75,6 +75,53 @@ class Deployment(ResourceHandler):
 
         image = self.spec.get("image", self.defaults.get("odooImage", "odoo:18.0"))
 
+        # Define volumes
+        volumes = [
+            client.V1Volume(
+                name="filestore",
+                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                    claim_name=f"{self.name}-filestore-pvc"
+                ),
+            ),
+            client.V1Volume(
+                name="odoo-conf",
+                config_map=client.V1ConfigMapVolumeSource(
+                    name=f"{self.name}-odoo-conf"
+                ),
+            ),
+        ]
+
+        # Add Git repository volume if configured
+        if self.spec.get("gitProject"):
+            volumes.append(
+                client.V1Volume(
+                    name="repo-volume",
+                    persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                        claim_name=f"{self.name}-repo-pvc"
+                    ),
+                )
+            )
+
+        # Define volume mounts
+        volume_mounts = [
+            client.V1VolumeMount(
+                name="filestore",
+                mount_path="/var/lib/odoo",
+            ),
+            client.V1VolumeMount(
+                name="odoo-conf",
+                mount_path="/etc/odoo",
+            ),
+        ]
+
+        # Add Git repository volume mount if configured
+        if self.spec.get("gitProject"):
+            volume_mounts.append(
+                client.V1VolumeMount(
+                    name="repo-volume", mount_path="/mnt/addons", sub_path="repo"
+                )
+            )
+
         metadata = client.V1ObjectMeta(
             name=self.name,
             owner_references=[self.owner_reference],
@@ -106,20 +153,7 @@ class Deployment(ResourceHandler):
                 ),
                 spec=client.V1PodSpec(
                     **pull_secret,
-                    volumes=[
-                        client.V1Volume(
-                            name=f"filestore",
-                            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                                claim_name=f"{self.name}-filestore-pvc"
-                            ),
-                        ),
-                        client.V1Volume(
-                            name="odoo-conf",
-                            config_map=client.V1ConfigMapVolumeSource(
-                                name=f"{self.name}-odoo-conf"
-                            ),
-                        ),
-                    ],
+                    volumes=volumes,
                     security_context=client.V1PodSecurityContext(
                         run_as_user=100,
                         run_as_group=101,
@@ -145,16 +179,7 @@ class Deployment(ResourceHandler):
                                     name="websocket",
                                 ),
                             ],
-                            volume_mounts=[
-                                client.V1VolumeMount(
-                                    name="filestore",
-                                    mount_path="/var/lib/odoo",
-                                ),
-                                client.V1VolumeMount(
-                                    name="odoo-conf",
-                                    mount_path="/etc/odoo",
-                                ),
-                            ],
+                            volume_mounts=volume_mounts,
                             env=[
                                 client.V1EnvVar(
                                     name="HOST",
@@ -192,8 +217,8 @@ class Deployment(ResourceHandler):
                                     path="/web/health",
                                     port=8069,
                                 ),
-                                initial_delay_seconds=20,
-                                period_seconds=5,
+                                initial_delay_seconds=2,
+                                period_seconds=2,
                                 timeout_seconds=2,
                                 success_threshold=1,
                                 failure_threshold=36,
@@ -203,8 +228,8 @@ class Deployment(ResourceHandler):
                                     path="/web/health",
                                     port=8069,
                                 ),
-                                initial_delay_seconds=20,
-                                period_seconds=5,
+                                initial_delay_seconds=2,
+                                period_seconds=2,
                                 timeout_seconds=2,
                                 success_threshold=1,
                                 failure_threshold=20,

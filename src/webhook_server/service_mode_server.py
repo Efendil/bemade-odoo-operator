@@ -17,21 +17,22 @@ logger = logging.getLogger(__name__)
 class ServiceModeWebhookServer(kopf.WebhookServer):
     """
     A webhook server that uses service mode for Kubernetes webhook configurations.
-    
+
     This server extends Kopf's WebhookServer but yields a service configuration
     instead of a URL configuration. This is more suitable for in-cluster deployments
     as it allows Kubernetes to route webhook requests through the service instead
     of using a URL.
-    
+
     The service namespace and name are configurable via parameters:
     - service_namespace: The namespace where the service is deployed
     - service_name: The name of the service
-    
+
     Note: The 'addr' and 'host' parameters from the parent WebhookServer are ignored
     in service mode, as the service name and namespace are used instead for routing.
     The server will still bind to the specified port, but the hostname/address
     is not used in the webhook configuration.
     """
+
     def __init__(
         self,
         *,
@@ -77,15 +78,13 @@ class ServiceModeWebhookServer(kopf.WebhookServer):
         self.service_name = service_name
         self.service_namespace = service_namespace
 
-
-
     async def __call__(self, fn):
         """
         Start the webhook server and yield a service configuration.
 
         This overrides the default implementation to yield a service configuration
         instead of a URL configuration. Unlike the parent WebhookServer, this method
-        ignores the 'addr' and 'host' parameters and uses the service_name and 
+        ignores the 'addr' and 'host' parameters and uses the service_name and
         service_namespace instead for the webhook configuration.
 
         Args:

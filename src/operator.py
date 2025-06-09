@@ -3,6 +3,7 @@ import logging
 import os
 from kubernetes import client
 from handlers.odoo_handler import OdooHandler
+from handlers.git_sync_handler import GitSyncHandler
 from webhook_server import ServiceModeWebhookServer
 
 # Configure logging
@@ -117,6 +118,24 @@ def validate(body, old, new, **kwargs):
         raise kopf.AdmissionError(error_message)
 
 
+@kopf.on.create("bemade.org", "v1", "gitsyncs")
+def create_gitsync_fn(body, **kwargs):
+    handler = GitSyncHandler(body, **kwargs)
+    handler.handle_create()
+
+
+@kopf.on.update("bemade.org", "v1", "gitsyncs")
+def update_gitsync_fn(body, **kwargs):
+    handler = GitSyncHandler(body, **kwargs)
+    handler.handle_update()
+
+
+@kopf.on.delete("bemade.org", "v1", "gitsyncs")
+def delete_gitsync_fn(body, **kwargs):
+    handler = GitSyncHandler(body, **kwargs)
+    handler.handle_delete()
+
+
 @kopf.timer("bemade.org", "v1", "odooinstances", interval=30.0)
 def check_odoo_instance_periodic(body, **kwargs):
     """Periodic check for OdooInstances to handle any time-based operations.
@@ -124,3 +143,16 @@ def check_odoo_instance_periodic(body, **kwargs):
     """
     handler = OdooHandler(body, **kwargs)
     handler.check_periodic()
+
+
+def _is_gitsync_job(labels):
+    """Check if the job is managed by GitSync."""
+    return labels and "git-sync" in labels
+
+
+@kopf.on.field("batch", "v1", "jobs", when=_is_gitsync_job, field="status.succeeded")
+@kopf.on.field("batch", "v1", "jobs", when=_is_gitsync_job, field="status.failed")
+def on_job_status_change(name, namespace, status, meta, **kwargs):
+    """Clean up completed GitSync jobs."""
+    job = client.BatchV1Api().read_namespaced_job(name=name, namespace=namespace)
+    GitSyncHandler(job=job).handle_completion()

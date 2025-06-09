@@ -5,15 +5,16 @@ import yaml
 from .pull_secret import PullSecret
 from .odoo_user_secret import OdooUserSecret
 from .filestore_pvc import FilestorePVC
+from .git_repo_pvc import GitRepoPVC
 from .odoo_conf import OdooConf
 from .tls_cert import TLSCert
 from .deployment import Deployment
 from .service import Service
 from .ingress_routes import IngressRouteHTTPS, IngressRouteWebsocket
+from .git_secret import GitSecret
 from .upgrade_job import UpgradeJob
 from .resource_handler import ResourceHandler
 import logging
-import base64
 
 
 class OdooHandler(ResourceHandler):
@@ -49,6 +50,7 @@ class OdooHandler(ResourceHandler):
         self.pull_secret = PullSecret(self)
         self.odoo_user_secret = OdooUserSecret(self)
         self.filestore_pvc = FilestorePVC(self)
+        self.git_repo_pvc = GitRepoPVC(self)
         self.odoo_conf = OdooConf(self)
         self.tls_cert = TLSCert(self)
         self.deployment = Deployment(self)
@@ -56,12 +58,14 @@ class OdooHandler(ResourceHandler):
         self.ingress_route_https = IngressRouteHTTPS(self)
         self.ingress_route_websocket = IngressRouteWebsocket(self)
         self.upgrade_job = UpgradeJob(self)
+        self.git_secret = GitSecret(self)
 
-        # Create handlers list in the order resources should be created/updated
+        # Create handlers list in the correct order for creation/update
         self.handlers = [
             self.pull_secret,
             self.odoo_user_secret,
             self.filestore_pvc,
+            self.git_repo_pvc,  # Git repo PVC before config since config might need it
             self.odoo_conf,
             self.tls_cert,
             self.deployment,
@@ -270,9 +274,9 @@ class OdooHandler(ResourceHandler):
             # Check if the database is owned by the Odoo user
             cur.execute(
                 """
-                SELECT d.datname 
-                FROM pg_database d 
-                JOIN pg_roles r ON d.datdba = r.oid 
+                SELECT d.datname
+                FROM pg_database d
+                JOIN pg_roles r ON d.datdba = r.oid
                 WHERE d.datname = %s AND r.rolname = %s
                 """,
                 (database_name, odoo_username),
