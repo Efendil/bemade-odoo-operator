@@ -99,12 +99,14 @@ class GitSyncHandler(ResourceHandler):
         ]
 
         # Add SSH secret volume if specified
-        ssh_secret = self.odoo_handler.git_secret
-        if ssh_secret:
+        ssh_secret_name = self.spec.get("sshSecret")
+        if ssh_secret_name:
             volumes.append(
                 client.V1Volume(
                     name="git-secret",
-                    secret=ssh_secret.resource,
+                    secret=client.V1SecretVolumeSource(
+                        secret_name=ssh_secret_name
+                    ),
                 )
             )
 
@@ -138,13 +140,13 @@ class GitSyncHandler(ResourceHandler):
     def _get_git_sync_container(self) -> client.V1Container:
         """Create the container spec for the Git sync job."""
         branch = self.spec.get("branch", "main")
-        repository = self.spec["repository"]
-        ssh_secret = self.odoo_handler.git_secret.resource
+        repository = self.spec.get("repository", "")
+        ssh_secret_name = self.spec.get("sshSecret")
 
         # Create a shell script that will handle both initial clone and updates with submodules
         # Include SSH setup if an SSH secret is provided
         ssh_setup = ""
-        if ssh_secret:
+        if ssh_secret_name:
             ssh_setup = """
 # Set up SSH configuration
 mkdir -p ~/.ssh
@@ -198,7 +200,7 @@ echo "Git sync completed successfully"
         volume_mounts = [client.V1VolumeMount(name="repo-volume", mount_path="/repo")]
 
         # Add SSH secret volume mount if provided
-        if ssh_secret:
+        if ssh_secret_name:
             volume_mounts.append(
                 client.V1VolumeMount(name="git-secret", mount_path="/etc/git-secret")
             )
