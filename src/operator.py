@@ -149,12 +149,16 @@ def check_odoo_instance_periodic(body, **kwargs):
 
 def _is_gitsync_job(labels, **kwargs):
     """Check if the job is managed by GitSync."""
+    logging.debug(f"In _is_gitsync_job:\nlabels:{labels}\nkwargs:{kwargs}")
     return labels and "git-sync" in labels
 
 
 @kopf.on.field("batch", "v1", "jobs", when=_is_gitsync_job, field="status.succeeded")
 @kopf.on.field("batch", "v1", "jobs", when=_is_gitsync_job, field="status.failed")
-def on_job_status_change(name, namespace, status, meta, **kwargs):
-    """Clean up completed GitSync jobs."""
+def on_job_status_change(body, old, new, name, namespace, **kwargs):
+    """Handle GitSync job completion and trigger Odoo deployment update."""
+    logging.info(
+        f"GitSync job {name} in {namespace} status changed: old={old}, new={new}"
+    )
     job = client.BatchV1Api().read_namespaced_job(name=name, namespace=namespace)
     GitSyncHandler(job=job).handle_completion()
