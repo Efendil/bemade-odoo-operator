@@ -4,6 +4,7 @@ from kubernetes import client
 from .resource_handler import ResourceHandler, update_if_exists
 from datetime import datetime, timezone
 from .odoo_handler import OdooHandler
+import os
 
 
 class GitSyncHandler(ResourceHandler):
@@ -14,7 +15,27 @@ class GitSyncHandler(ResourceHandler):
     """
 
     def __init__(self, body: Any = None, job: client.V1Job = None, **kwargs):
-        super().__init__(body)
+        if body:
+            self.body = body
+            self.spec = body.get("spec", {})
+            self.meta = body.get("meta", body.get("metadata"))
+            self.namespace = self.meta.get("namespace")
+            self.name = self.meta.get("name")
+            self.uid = self.meta.get("uid")
+        else:
+            self.body = {}
+            self.spec = {}
+            self.meta = {}
+            self.namespace = None
+            self.name = None
+            self.uid = None
+        self.operator_ns = os.environ.get("OPERATOR_NAMESPACE")
+        # Load defaults if available
+        try:
+            with open("/etc/odoo/instance-defaults.yaml") as f:
+                self.defaults = yaml.safe_load(f)
+        except (FileNotFoundError, PermissionError):
+            self.defaults = {}
         self._resource = job
 
     def _read_resource(self):
