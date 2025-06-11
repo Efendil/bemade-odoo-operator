@@ -60,16 +60,17 @@ class GitRepoPVC(PVCHandler):
             from .git_sync_handler import GitSyncHandler
 
             # Create GitSync using the parent's body - GitSyncHandler expects the full CR
+            # Use parent's body for API version and kind references
             git_sync_body = {
-                "apiVersion": "odoo.bemade.org/v1",
+                "apiVersion": "bemade.org/v1",
                 "kind": "GitSync",
                 "metadata": {
                     "name": f"{self.name}-git-sync",
                     "namespace": self.namespace,
                     "ownerReferences": [
                         {
-                            "apiVersion": self.body["apiVersion"],
-                            "kind": self.body["kind"],
+                            "apiVersion": "bemade.org/v1",
+                            "kind": "OdooInstance",
                             "name": self.name,
                             "uid": self.owner_reference.uid,
                             "controller": True,
