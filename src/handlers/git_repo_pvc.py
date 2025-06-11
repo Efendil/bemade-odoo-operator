@@ -20,14 +20,17 @@ class GitRepoPVC(PVCHandler):
         """Get the storage specification from the CRD."""
         git_project = self.spec.get("gitProject", {})
         storage_spec = git_project.get("storage", {})
-        return {
-            "size": storage_spec.get("size") or self.default_size,
-            "class": storage_spec.get("class") or self.default_storage_class,
-        }
+        spec = {}
+        if storage_spec.get("class"):
+            spec["storage_class_name"] = spec.get("class")
+        spec["resources"] = client.V1ResourceRequirements(
+            requests={"storage": storage_spec.get("size", self.default_size)}
+        )
+        return spec
 
     def _get_resource_body(self):
         """Get the PVC definition."""
-        storage = self._get_storage_spec()
+        storage_spec = self._get_storage_spec()
 
         return client.V1PersistentVolumeClaim(
             metadata=client.V1ObjectMeta(
@@ -36,10 +39,7 @@ class GitRepoPVC(PVCHandler):
             ),
             spec=client.V1PersistentVolumeClaimSpec(
                 access_modes=["ReadWriteOnce"],
-                storage_class_name=storage["class"],
-                resources=client.V1ResourceRequirements(
-                    requests={"storage": storage["size"]}
-                ),
+                **storage_spec,
             ),
         )
 

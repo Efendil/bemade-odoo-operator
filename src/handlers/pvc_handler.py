@@ -7,7 +7,10 @@ class PVCHandler(ResourceHandler):
     """Base class for PVC resource handlers with common functionality."""
 
     def __init__(
-        self, handler, pvc_name_suffix, default_size, default_storage_class="standard"
+        self,
+        handler,
+        pvc_name_suffix,
+        default_size,
     ):
         """Initialize the PVC handler.
 
@@ -15,12 +18,10 @@ class PVCHandler(ResourceHandler):
             handler: The parent resource handler
             pvc_name_suffix: Suffix to append to resource name for the PVC
             default_size: Default size if not specified in the spec
-            default_storage_class: Default storage class if not specified in the spec
         """
         super().__init__(handler)
         self.pvc_name_suffix = pvc_name_suffix
         self.default_size = default_size
-        self.default_storage_class = default_storage_class
 
     def _get_pvc_name(self):
         """Get the name of the PVC."""
@@ -47,15 +48,6 @@ class PVCHandler(ResourceHandler):
                 current = current.get(key, {})
             return current.get(spec_path[-1], self.default_size)
         return self.default_size
-
-    def _get_storage_class(self, spec_path=None):
-        """Get the storage class from the spec with fallback to default."""
-        if spec_path:
-            current = self.spec
-            for key in spec_path[:-1]:
-                current = current.get(key, {})
-            return current.get(spec_path[-1], self.default_storage_class)
-        return self.default_storage_class
 
     def _get_resource_body(self):
         """Get the PVC definition. Must be implemented by subclasses."""
