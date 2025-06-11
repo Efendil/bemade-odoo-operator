@@ -89,8 +89,24 @@ class GitRepoPVC(PVCHandler):
             }
 
             logging.info(f"Initializing Git sync for {self.name}")
-            # Initialize and create the GitSync resource
-            GitSyncHandler(git_sync_body).handle_create()
+            
+            # Use the custom objects API directly to create the GitSync resource
+            api = client.CustomObjectsApi()
+            try:
+                api.create_namespaced_custom_object(
+                    group="bemade.org",
+                    version="v1",
+                    namespace=self.namespace,
+                    plural="gitsyncs",
+                    body=git_sync_body
+                )
+                logging.info(f"Successfully created GitSync resource for {self.name}")
+            except client.exceptions.ApiException as e:
+                if e.status == 409:  # Conflict - resource already exists
+                    logging.info(f"GitSync resource for {self.name} already exists, skipping creation")
+                else:
+                    logging.error(f"Failed to create GitSync resource: {e}")
+                    raise
         except Exception as e:
             logging.error(f"Failed to initialize Git sync: {e}")
             raise
