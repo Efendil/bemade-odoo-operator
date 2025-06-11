@@ -96,10 +96,9 @@ def validate(body, old, new, **kwargs):
     _logger.debug(f"In the validatioin webhook, body: {body}")
     _logger.debug(f"Old spec: {old}")
     _logger.debug(f"New spec: {new}")
-
-    new_spec = new.get("spec", {})
-    if not new_spec:
+    if not new:
         return
+
     upgrade_spec = new_spec.get("upgrade", {})
     database = upgrade_spec.get("database", "")
     modules = upgrade_spec.get("modules", [])
