@@ -61,7 +61,7 @@ class OdooConf(ResourceHandler):
         # Add git repo's addons directory to addons_path if gitProject is configured
         if self.spec.get("gitProject"):
             if "addons_path" in config_options:
-                config_options["addons_path"] = +",/mnt/repo/addons"
+                config_options["addons_path"] += ",/mnt/repo/addons"
             else:
                 config_options["addons_path"] = "/mnt/repo/addons"
 
