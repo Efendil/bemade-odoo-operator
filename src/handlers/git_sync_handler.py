@@ -5,6 +5,7 @@ from .resource_handler import ResourceHandler, update_if_exists
 from datetime import datetime, timezone
 from .odoo_handler import OdooHandler
 import os
+import yaml
 
 
 class GitSyncHandler(ResourceHandler):
