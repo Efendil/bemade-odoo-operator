@@ -27,10 +27,14 @@ class OdooUserSecret(ResourceHandler):
 
     @property
     def username(self):
+        if not self.resource:
+            return None
         return base64.b64decode(self.resource.data.get("username")).decode("utf-8")
 
     @property
     def password(self):
+        if not self.resource:
+            return None
         return base64.b64decode(self.resource.data.get("password")).decode("utf-8")
 
     def handle_delete(self):

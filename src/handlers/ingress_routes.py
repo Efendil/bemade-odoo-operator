@@ -10,6 +10,9 @@ class IngressRouteBase(ResourceHandler):
         self.operator_ns = handler.operator_ns
         self.tls_cert = handler.tls_cert
 
+    def _get_route_config(self):
+        raise NotImplementedError("Subclasses must implement this method.")
+
     def _read_resource(self):
         return client.CustomObjectsApi().get_namespaced_custom_object(
             group="traefik.io",

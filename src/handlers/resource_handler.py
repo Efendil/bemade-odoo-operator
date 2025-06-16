@@ -1,4 +1,4 @@
-from kubernetes import client
+from kubernetes.client.rest import ApiException
 import functools
 
 
@@ -69,12 +69,15 @@ class ResourceHandler:
         # Default implementation does nothing
         pass
 
+    def _create_resource(self):
+        raise NotImplementedError()
+
     @property
     def resource(self):
         if not self._resource:
             try:
                 self._resource = self._read_resource()
-            except client.exceptions.ApiException as e:
+            except ApiException as e:
                 if e.status == 404:
                     # Resource not found, that's fine
                     pass

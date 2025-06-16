@@ -1,288 +1,35 @@
+from __future__ import annotations
+from .job_handler import JobHandler
 from kubernetes import client
-import logging
-from .resource_handler import ResourceHandler, update_if_exists, create_if_missing
 import os
-from datetime import datetime, timezone
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .odoo_handler import OdooHandler
 
 
-class UpgradeJob(ResourceHandler):
+class UpgradeJob(JobHandler):
     """Manages the Odoo Upgrade Job."""
 
-    def __init__(self, handler):
-        super().__init__(handler)
+    def __init__(self, handler: OdooHandler):
+        super().__init__(
+            handler=handler,
+            status_key="upgradeJob",
+            status_phase="Upgrading",
+            completion_patch={"spec": {"upgrade": None}},
+        )
         self.defaults = handler.defaults
-        self.odoo_user_secret = handler.odoo_user_secret
-        self.deployment = handler.deployment
-        self.upgrade_spec = self.spec.get("upgrade", {})
-        self.database = self.upgrade_spec.get("database", "")
+        self.upgrade_spec = handler.spec.get("upgrade", {})
         self.modules = self.upgrade_spec.get("modules", [])
+        self.database = self.upgrade_spec.get("database", "")
 
-    def _read_resource(self):
-        """Read the most recent upgrade job for this OdooInstance.
-
-        This method finds all jobs with matching labels and owner references,
-        then returns the most recent active job, or the most recent completed job
-        if no active jobs are found.
-        """
-        try:
-            # Get all jobs with matching labels
-            jobs = client.BatchV1Api().list_namespaced_job(
-                namespace=self.namespace,
-                label_selector=f"app.kubernetes.io/instance={self.name},app.kubernetes.io/component=upgrade",
-            )
-
-            # Filter for jobs owned by this OdooInstance
-            owned_jobs = [j for j in jobs.items if self._verify_owner_reference(j)]
-            if not owned_jobs:
-                logging.debug(f"No upgrade jobs found for {self.name}")
-                return None
-
-            # Filter for active jobs (not completed or failed)
-            active_jobs = [
-                j
-                for j in owned_jobs
-                if j.status and not (j.status.succeeded or j.status.failed)
-            ]
-
-            if active_jobs:
-                # Sort by creation timestamp, newest first
-                active_jobs.sort(
-                    key=lambda j: j.metadata.creation_timestamp, reverse=True
-                )
-                return active_jobs[0]
-
-            # If no active jobs, return the most recent completed job
-            owned_jobs.sort(key=lambda j: j.metadata.creation_timestamp, reverse=True)
-            return owned_jobs[0]
-
-        except client.exceptions.ApiException as e:
-            logging.warning(f"Error listing upgrade jobs for {self.name}: {e}")
-            return None
-
-    def _verify_owner_reference(self, resource):
-        """Verify that the resource is owned by this OdooInstance.
-
-        Args:
-            resource: The Kubernetes resource to check
-
-        Returns:
-            bool: True if the resource is owned by this OdooInstance, False otherwise
-        """
-        if (
-            not resource
-            or not resource.metadata
-            or not resource.metadata.owner_references
-        ):
-            return False
-
-        # Check if any of the owner references match this OdooInstance
-        for owner_ref in resource.metadata.owner_references:
-            if (
-                owner_ref.uid == self.owner_reference.uid
-                and owner_ref.kind == self.owner_reference.kind
-                and owner_ref.name == self.owner_reference.name
-            ):
-                return True
-
-        return False
-
-    @property
-    def is_completed(self):
-        return self._check_job_completed()
-
-    @update_if_exists
     def handle_create(self):
-        # Only create the job if there's an upgrade request
-        if not self.should_upgrade():
-            return None
+        if not self.handler.git_sync_job.is_running:
+            super().handle_create()
 
-        # Scale down the deployment
-        self.deployment.scale(0)
-
-        # Create the upgrade job
-        job = self._get_resource_body()
-        self._resource = client.BatchV1Api().create_namespaced_job(
-            namespace=self.namespace,
-            body=job,
-        )
-
-        logging.debug(
-            f"Created upgrade job for {self.name} to upgrade modules: {self.modules}"
-        )
-        return self._resource
-
-    @create_if_missing
     def handle_update(self):
-        # Only create/update the job if there's an upgrade request
-        if not self.should_upgrade():
-            return None
-
-        # Scale down the deployment
-        self.deployment.scale(0)
-
-        # For upgrade jobs, we don't update - we create a new one
-        # This ensures we get a clean state for each upgrade
-        logging.debug(f"Creating a new upgrade job for {self.name} instead of updating")
-        return self.handle_create()
-
-    def handle_delete(self):
-        # Delete the job if it exists
-        if self.resource and self.resource.metadata and self.resource.metadata.name:
-            try:
-                client.BatchV1Api().delete_namespaced_job(
-                    name=self.resource.metadata.name,
-                    namespace=self.namespace,
-                    body=client.V1DeleteOptions(
-                        propagation_policy="Foreground",
-                    ),
-                )
-                logging.debug(
-                    f"Deleted upgrade job {self.resource.metadata.name} for {self.name}"
-                )
-            except client.exceptions.ApiException as e:
-                if e.status != 404:
-                    raise
-
-    def should_upgrade(self):
-        """Check if an upgrade should be performed."""
-        # Basic validation that this is a valid upgrade request
-        if not (
-            self.upgrade_spec
-            and self.database
-            and isinstance(self.modules, list)
-            and len(self.modules) > 0
-            and (
-                not self.upgrade_spec.get("time")
-                or datetime.fromisoformat(self.upgrade_spec.get("time"))
-                < datetime.now(tz=timezone.utc)
-            )
-        ):
-            return False
-
-        # If we have a resource, check if it's still running
-        if self.resource:
-            # If the job is completed, we can proceed with cleanup
-            # but we shouldn't create a new job yet - that will happen
-            # after the upgrade spec is removed and then added again
-            if self.is_completed:
-                return False
-
-            # If the job is still running, don't create a new one
-            return False
-
-        # No existing job, so we can create one
-        return True
-
-    def _check_job_completed(self):
-        """Check if the upgrade job has completed successfully."""
-        # If there's no job resource, it can't be completed
-        if not self.resource:
-            return False
-
-        # Check if the job has completed successfully
-        job_status = self.resource.status
-        if job_status and job_status.succeeded:
-            logging.info(f"Upgrade job for {self.name} completed successfully")
-            return True
-
-        return False
-
-    def handle_completion(self):
-        """Handle the completion of the upgrade job.
-        This includes scaling the deployment back up and updating other resources.
-
-        Returns:
-            bool: True if the job was completed and handled, False otherwise
-        """
-        # Skip if the job isn't completed
-        if not self.is_completed:
-            return False
-
-        logging.debug(f"Handling completion of upgrade job for {self.name}")
-
-        # Scale the deployment back up
-        self._scale_deployment_up()
-
-        # Remove the upgrade section from the spec to prevent re-triggering
-        # Only if it still exists
-        if self.spec.get("upgrade"):
-            self._remove_upgrade_from_spec()
-
-        # Delete the completed job
-        self._cleanup_completed_job()
-
-        # Clear the resource reference to prevent re-processing
-        self._resource = None
-
-        logging.info(f"Upgrade process completed for {self.name}")
-        return True
-
-    def _scale_deployment_up(self):
-        """Scale the deployment back up after upgrade."""
-        # Get the desired replicas from the spec or default to 1
-        replicas = self.spec.get("replicas", 1)
-
-        # Scale the deployment
-        success = self.deployment.scale(replicas)
-
-        if success:
-            logging.debug(
-                f"Scaled deployment {self.name} back up to {replicas} replicas"
-            )
-        else:
-            logging.warning(
-                f"Failed to scale deployment {self.name} back up to {replicas} replicas"
-            )
-
-    def _remove_upgrade_from_spec(self):
-        """Remove the upgrade section from the spec to prevent re-triggering."""
-        try:
-            # Get the current custom resource
-            api = client.CustomObjectsApi()
-
-            # Apply the patch to remove the upgrade field
-            patch = {"spec": {"upgrade": None}}  # This will remove the upgrade field
-
-            api.patch_namespaced_custom_object(
-                group="bemade.org",
-                version="v1",
-                namespace=self.namespace,
-                plural="odooinstances",
-                name=self.name,
-                body=patch,
-            )
-
-            logging.debug(f"Removed upgrade field from {self.name} spec")
-        except Exception as e:
-            logging.error(f"Error removing upgrade from spec: {e}")
-
-    def _cleanup_completed_job(self):
-        """Delete the completed upgrade job to clean up resources."""
-        if (
-            not self.resource
-            or not self.resource.metadata
-            or not self.resource.metadata.name
-        ):
-            logging.debug(f"No job resource to delete for {self.name}")
-            return
-
-        try:
-            # Delete the job using its actual name from the resource
-            client.BatchV1Api().delete_namespaced_job(
-                name=self.resource.metadata.name,
-                namespace=self.namespace,
-                body=client.V1DeleteOptions(
-                    propagation_policy="Background",
-                ),
-            )
-            logging.debug(
-                f"Deleted completed upgrade job {self.resource.metadata.name} for {self.name}"
-            )
-            # Clear the resource reference
-            self._resource = None
-        except client.exceptions.ApiException as e:
-            if e.status != 404:  # Ignore if job is already gone
-                logging.error(f"Error deleting completed upgrade job: {e}")
+        if not self.handler.git_sync_job.is_running:
+            super().handle_update()
 
     def _get_resource_body(self):
         """Create the job resource definition."""
@@ -320,6 +67,47 @@ class UpgradeJob(ResourceHandler):
 
         db_host = os.environ["DB_HOST"]
         db_port = os.environ["DB_PORT"]
+        volumes = [
+            client.V1Volume(
+                name=f"filestore",
+                persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                    claim_name=f"{self.name}-filestore-pvc"
+                ),
+            ),
+            client.V1Volume(
+                name="odoo-conf",
+                config_map=client.V1ConfigMapVolumeSource(
+                    name=f"{self.name}-odoo-conf"
+                ),
+            ),
+        ]
+        volume_mounts = [
+            client.V1VolumeMount(
+                name="filestore",
+                mount_path="/var/lib/odoo",
+            ),
+            client.V1VolumeMount(
+                name="odoo-conf",
+                mount_path="/etc/odoo",
+            ),
+        ]
+
+        if self.handler.git_repo_pvc.resource:
+            volumes.append(
+                client.V1Volume(
+                    name="git-repo",
+                    persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
+                        claim_name=self.handler.git_repo_pvc.resource.metadata.name
+                    ),
+                )
+            )
+            volume_mounts.append(
+                client.V1VolumeMount(
+                    name="git-repo",
+                    mount_path="/mnt/repo",
+                )
+            )
+
         # Create the job spec
         job_spec = client.V1JobSpec(
             template=client.V1PodTemplateSpec(
@@ -329,20 +117,7 @@ class UpgradeJob(ResourceHandler):
                 spec=client.V1PodSpec(
                     **pull_secret,
                     restart_policy="Never",
-                    volumes=[
-                        client.V1Volume(
-                            name=f"filestore",
-                            persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                                claim_name=f"{self.name}-filestore-pvc"
-                            ),
-                        ),
-                        client.V1Volume(
-                            name="odoo-conf",
-                            config_map=client.V1ConfigMapVolumeSource(
-                                name=f"{self.name}-odoo-conf"
-                            ),
-                        ),
-                    ],
+                    volumes=volumes,
                     security_context=client.V1PodSecurityContext(
                         run_as_user=100,
                         run_as_group=101,
@@ -371,16 +146,7 @@ class UpgradeJob(ResourceHandler):
                                 "--no-http",
                                 "--stop-after-init",
                             ],
-                            volume_mounts=[
-                                client.V1VolumeMount(
-                                    name="filestore",
-                                    mount_path="/var/lib/odoo",
-                                ),
-                                client.V1VolumeMount(
-                                    name="odoo-conf",
-                                    mount_path="/etc/odoo",
-                                ),
-                            ],
+                            volume_mounts=volume_mounts,
                             env=[
                                 client.V1EnvVar(
                                     name="HOST",

@@ -1,12 +1,20 @@
+from __future__ import annotations
 from kubernetes import client
 from .resource_handler import ResourceHandler, update_if_exists, create_if_missing
+import logging
 import os
+from typing import cast, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .odoo_handler import OdooHandler
+
+logger = logging.getLogger(__name__)
 
 
 class Deployment(ResourceHandler):
     """Manages the Odoo Deployment."""
 
-    def __init__(self, handler):
+    def __init__(self, handler: OdooHandler):
         super().__init__(handler)
         self.defaults = handler.defaults
         self.odoo_user_secret = handler.odoo_user_secret
@@ -28,6 +36,27 @@ class Deployment(ResourceHandler):
     @create_if_missing
     def handle_update(self):
         deployment = self._get_resource_body()
+
+        if not deployment.spec:
+            raise Exception("Deployment spec is missing")
+
+        instance_status = client.CustomObjectsApi().get_namespaced_custom_object_status(
+            group="bemade.org",
+            version="v1",
+            namespace=self.handler.namespace,
+            plural="odooinstances",
+            name=self.handler.name,
+        )
+        if not instance_status:
+            raise Exception("OdooInstance status could not be loaded.")
+        phase = cast(dict, instance_status).get("status", {}).get("phase")
+
+        logger.debug(f"Deployment {self.name} checking OdooInstance phase: {phase}")
+
+        if phase in ["Syncing", "Upgrading"]:
+            deployment.spec.replicas = 0
+            logger.debug(f"Deployment {self.name} scaled down to 0 replicas")
+
         self._resource = client.AppsV1Api().patch_namespaced_deployment(
             name=self.name,
             namespace=self.namespace,
@@ -52,7 +81,10 @@ class Deployment(ResourceHandler):
                 name=self.name,
                 namespace=self.namespace,
             )
+            deployment = cast(client.V1Deployment, deployment)
 
+            if not deployment.spec:
+                raise Exception(f"Deployment {self.name} not found, couldn't scale.")
             # Update the replicas
             deployment.spec.replicas = replicas
 
@@ -64,12 +96,12 @@ class Deployment(ResourceHandler):
             )
 
             return True
-        except client.exceptions.ApiException as e:
+        except client.ApiException as e:
             if e.status != 404:
                 raise
             return False
 
-    def _get_resource_body(self):
+    def _get_resource_body(self) -> client.V1Deployment:
         db_host = os.environ["DB_HOST"]
         db_port = os.environ["DB_PORT"]
 
@@ -118,9 +150,7 @@ class Deployment(ResourceHandler):
         if self.spec.get("gitProject"):
             # Mount the entire git repo to /mnt/repo
             volume_mounts.append(
-                client.V1VolumeMount(
-                    name="repo-volume", mount_path="/mnt/repo"
-                )
+                client.V1VolumeMount(name="repo-volume", mount_path="/mnt/repo")
             )
 
         metadata = client.V1ObjectMeta(
@@ -170,6 +200,36 @@ class Deployment(ResourceHandler):
                         client.V1Container(
                             name=f"odoo-{self.name}",
                             image=image,
+                            command=["/bin/bash", "-c"],
+                            args=[
+                                """
+                                # Check for requirements.txt and install if present
+                                REQUIREMENTS_FILE="/mnt/repo/requirements.txt"
+                                if [ -f "$REQUIREMENTS_FILE" ]; then
+                                    echo "Found requirements.txt, installing Python dependencies..."
+
+                                    # Check pip version to determine if we need --break-system-packages
+                                    MAJOR_VERSION=$(pip --version | awk '{print $2}' | cut -d. -f1)
+
+                                    # Install requirements
+                                    set -e  # Exit immediately if a command fails
+                                    if [ "$MAJOR_VERSION" -ge 23 ]; then
+                                        echo "Using pip $MAJOR_VERSION.x with --break-system-packages"
+                                        pip install --break-system-packages -r "$REQUIREMENTS_FILE"
+                                    else
+                                        echo "Using pip $MAJOR_VERSION.x"
+                                        pip install -r "$REQUIREMENTS_FILE"
+                                    fi
+
+                                    echo "Python requirements installed successfully"
+                                else
+                                    echo "No requirements.txt found, skipping Python dependencies installation"
+                                fi
+                                # Start Odoo with the original entrypoint
+                                echo "Starting Odoo..."
+                                exec /entrypoint.sh odoo
+                            """
+                            ],
                             ports=[
                                 client.V1ContainerPort(
                                     container_port=8069,

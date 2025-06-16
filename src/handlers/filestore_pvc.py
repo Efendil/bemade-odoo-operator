@@ -30,6 +30,6 @@ class FilestorePVC(PVCHandler):
                 resources=client.V1ResourceRequirements(requests={"storage": size}),
             ),
         )
-        if storage_class:
+        if storage_class and pvc.spec:  # pvc.spec could theoretically be None
             pvc.spec.storage_class_name = storage_class
         return pvc

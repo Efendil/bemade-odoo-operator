@@ -1,5 +1,6 @@
 from kubernetes import client
-from .resource_handler import ResourceHandler, update_if_exists, create_if_missing
+from .resource_handler import ResourceHandler, update_if_exists
+from typing import cast
 
 
 class PullSecret(ResourceHandler):
@@ -29,6 +30,7 @@ class PullSecret(ResourceHandler):
             name=f"{self.spec.get('imagePullSecret')}",
             namespace=self.operator_ns,
         )
+        orig_secret = cast(client.V1Secret, orig_secret)
         return client.V1Secret(
             metadata=client.V1ObjectMeta(
                 name=f"{self.spec.get('imagePullSecret')}",

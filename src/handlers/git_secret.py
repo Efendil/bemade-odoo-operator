@@ -1,5 +1,6 @@
 from kubernetes import client
 from .resource_handler import ResourceHandler, update_if_exists, create_if_missing
+from typing import cast
 
 
 class GitSecret(ResourceHandler):
@@ -35,6 +36,8 @@ class GitSecret(ResourceHandler):
             name=self.secret_name,
             namespace=self.operator_ns,
         )
+        orig_secret = cast(client.V1Secret, orig_secret)
+
         return client.V1Secret(
             metadata=client.V1ObjectMeta(
                 name=self.secret_name,

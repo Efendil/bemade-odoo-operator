@@ -1,6 +1,7 @@
 import logging
 from kubernetes import client
 from .resource_handler import ResourceHandler, update_if_exists, create_if_missing
+from typing import cast
 
 
 class PVCHandler(ResourceHandler):
@@ -34,7 +35,7 @@ class PVCHandler(ResourceHandler):
                 name=self._get_pvc_name(),
                 namespace=self.namespace,
             )
-        except client.exceptions.ApiException as e:
+        except client.ApiException as e:
             if e.status == 404:
                 return None
             raise
@@ -69,40 +70,8 @@ class PVCHandler(ResourceHandler):
         This is a simplified implementation that relies on Kubernetes to handle
         storage quantity parsing and comparison.
         """
-        current_pvc = self._get_resource_body()
-        requested_size = current_pvc.spec.resources.requests["storage"]
-
-        # Get the current resource if it exists
-        try:
-            self._resource = self._read_resource()
-        except client.exceptions.ApiException as e:
-            if e.status == 404:
-                logging.warning(f"PVC {self._get_pvc_name()} not found, creating it")
-                return self.handle_create()
-            raise
-
-        # Only update if the requested size is larger than current
-        current_size = self._resource.spec.resources.requests["storage"]
-        if requested_size > current_size:
-            self._resource.spec.resources.requests["storage"] = requested_size
-            self._resource = (
-                client.CoreV1Api().patch_namespaced_persistent_volume_claim(
-                    name=self._get_pvc_name(),
-                    namespace=self.namespace,
-                    body=self._resource,
-                )
-            )
-
-    @property
-    def resource(self):
-        """Get the current PVC resource, fetching it if needed."""
-        if not self._resource:
-            try:
-                self._resource = self._read_resource()
-            except client.exceptions.ApiException as e:
-                if e.status == 404:
-                    # Resource not found, that's fine
-                    pass
-                else:
-                    raise
-        return self._resource
+        client.CoreV1Api().patch_namespaced_persistent_volume_claim(
+            name=self._get_pvc_name(),
+            namespace=self.namespace,
+            body=self._get_resource_body(),
+        )
