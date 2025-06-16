@@ -102,8 +102,10 @@ if [ -d "$REPO_DIR/.git" ]; then
     git submodule update --init --recursive --depth=1 --force
 else
     echo "Cloning repository..."
+
     # Clone with depth=1 for minimal download
-    git clone --depth=1 --branch "$BRANCH" --recurse-submodules --shallow-submodules "$REPOSITORY" "$REPO_DIR"
+    # The -f flag forces git to clone even if directory exists but is empty (except for lost+found)
+    git clone -f --depth=1 --branch "$BRANCH" --recurse-submodules --shallow-submodules "$REPOSITORY" "$REPO_DIR"
 
     # Ensure submodules are at the correct commits
     cd "$REPO_DIR"
