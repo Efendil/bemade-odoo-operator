@@ -32,6 +32,11 @@ class GitSyncJob(JobHandler):
         repository = git_project.get("repository")
         branch = git_project.get("branch", "main")
         ssh_secret_name = git_project.get("sshSecret")
+        # Default uid/gid for running the container
+        run_as_user = git_project.get("runAsUser", 1000)
+        run_as_group = git_project.get("runAsGroup", 1000)
+        # Extract resource requirements if specified
+        resources = git_project.get("resources", {})
 
         if not repository:
             raise ValueError(f"No repository specified in gitProject for {self.name}")
@@ -40,12 +45,17 @@ class GitSyncJob(JobHandler):
         timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
         job_name = f"{self.name}-git-sync-{timestamp}"
 
+        # Get PVC name
+        pvc_name = (
+            f"{self.spec.get('name') or self.name.replace('-gitsync', '')}-repo-pvc"
+        )
+
         # Prepare volumes for the pod
         volumes = [
             client.V1Volume(
                 name="repo-volume",
                 persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
-                    claim_name=f"{self.spec.get('name') or self.name.replace('-gitsync', '')}-repo-pvc"
+                    claim_name=pvc_name
                 ),
             )
         ]
@@ -65,13 +75,17 @@ class GitSyncJob(JobHandler):
         if ssh_secret_name:
             ssh_setup = """
 # Set up SSH configuration
-mkdir -p ~/.ssh
-cp /etc/git-secret/ssh-privatekey ~/.ssh/id_rsa
-chmod 600 ~/.ssh/id_rsa
-ssh-keyscan -t rsa github.com gitlab.com bitbucket.org >> ~/.ssh/known_hosts
+mkdir -p /root/.ssh
+cp /etc/git-secret/ssh-privatekey /root/.ssh/id_rsa
+chmod 600 /root/.ssh/id_rsa
+ssh-keyscan -t rsa github.com gitlab.com bitbucket.org >> /root/.ssh/known_hosts
 
 # Set git to use the SSH key
-git config --global core.sshCommand 'ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=accept-new'
+git config --global core.sshCommand 'ssh -i /root/.ssh/id_rsa -o StrictHostKeyChecking=accept-new'
+
+# Make git more verbose for debugging
+git config --global --add advice.detachedHead false
+export GIT_TRACE=1
 """
 
         git_script = f"""#!/bin/sh
@@ -97,23 +111,31 @@ if [ -d "$REPO_DIR/.git" ]; then
     git clean -fd
 
     # Fetch and reset to the remote branch
-    git fetch --depth=1 origin "$BRANCH"
+    git fetch origin "$BRANCH"
     git reset --hard "origin/$BRANCH"
 
     # Update submodules to their recorded commits
     git submodule foreach --recursive 'git clean -fd'
-    git submodule update --init --recursive --depth=1 --force
+    # Use shallow depth for submodules to save space
+    git submodule update --init --recursive
 else
     echo "Cloning repository..."
-    # Normal clone into the subdirectory
-    git clone --depth=1 --branch "$BRANCH" --recurse-submodules --shallow-submodules "$REPOSITORY" "$REPO_DIR"
+    # Use full clone for main repo (no depth limit) but shallow submodules
+    git clone --branch "$BRANCH" "$REPOSITORY" "$REPO_DIR" --recurse-submodules --shallow-submodules
 
-    # Ensure submodules are at the correct commits
-    cd "$REPO_DIR"
-    git submodule update --init --recursive --depth=1
 fi
 
 echo "Git sync completed successfully"
+"""
+
+        # Init container script to fix permissions
+        init_script = """
+#!/bin/sh
+set -x
+
+# Ensure proper ownership for the mounted volume
+chown -R 0:0 /repo
+chmod -R 775 /repo
 """
 
         # Prepare volume mounts
@@ -125,12 +147,45 @@ echo "Git sync completed successfully"
                 client.V1VolumeMount(name="git-secret", mount_path="/etc/git-secret")
             )
 
-        # Create the container
+        # Create resource requirements object if specified
+        container_resources = None
+        if resources:
+            container_resources = client.V1ResourceRequirements(
+                requests=resources.get(
+                    "requests",
+                    {"cpu": "100m", "memory": "128Mi", "ephemeral-storage": "1Gi"},
+                ),
+                limits=resources.get(
+                    "limits",
+                    {"cpu": "500m", "memory": "512Mi", "ephemeral-storage": "2Gi"},
+                ),
+            )
+
+        # Create the init container to fix permissions
+        init_container = client.V1Container(
+            name="init-fix-permissions",
+            image="alpine:latest",
+            command=["/bin/sh", "-c", init_script],
+            volume_mounts=volume_mounts,
+            security_context=client.V1SecurityContext(
+                run_as_user=0,  # Run as root for permission changes
+                run_as_group=0,
+            ),
+            resources=container_resources,
+        )
+
+        # Create the main container
         container = client.V1Container(
             name="git-sync",
             image="alpine/git:latest",
             command=["/bin/sh", "-c", git_script],
             volume_mounts=volume_mounts,
+            security_context=client.V1SecurityContext(
+                run_as_user=0,  # Run as root to ensure write permissions
+                run_as_group=0,
+                # Note: allowPrivilegeEscalation not supported in this k8s client version
+            ),
+            resources=container_resources,
         )
 
         # Define the job
@@ -144,9 +199,13 @@ echo "Git sync completed successfully"
             spec=client.V1JobSpec(
                 template=client.V1PodTemplateSpec(
                     spec=client.V1PodSpec(
+                        init_containers=[init_container],
                         containers=[container],
                         restart_policy="Never",
                         volumes=volumes,
+                        security_context=client.V1PodSecurityContext(
+                            fs_group=0  # Set filesystem group to access mounted volumes
+                        ),
                     )
                 ),
                 backoff_limit=2,
