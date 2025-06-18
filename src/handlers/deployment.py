@@ -131,7 +131,11 @@ class Deployment(ResourceHandler):
                     persistent_volume_claim=client.V1PersistentVolumeClaimVolumeSource(
                         claim_name=f"{self.name}-repo-pvc"
                     ),
-                )
+                ),
+                client.V1Volume(
+                    name="python-deps",
+                    empty_dir=client.V1EmptyDirVolumeSource(),
+                ),
             )
 
         # Define volume mounts
@@ -143,6 +147,10 @@ class Deployment(ResourceHandler):
             client.V1VolumeMount(
                 name="odoo-conf",
                 mount_path="/etc/odoo",
+            ),
+            client.V1VolumeMount(
+                name="python-deps",
+                mount_path="/mnt/python-deps",
             ),
         ]
 
@@ -173,6 +181,10 @@ class Deployment(ResourceHandler):
 
         # Get replicas from spec or default to 1
         replicas = self.spec.get("replicas", 1)
+        python_path_var = client.V1EnvVar(
+            name="PYTHONPATH",
+            value="/mnt/python-deps",
+        )
 
         spec = client.V1DeploymentSpec(
             replicas=replicas,
@@ -196,40 +208,17 @@ class Deployment(ResourceHandler):
                     tolerations=self.spec.get(
                         "tolerations", self.defaults.get("tolerations", [])
                     ),
+                    init_containers=[
+                        self._get_init_container_spec(
+                            volumes, volume_mounts, python_path_var
+                        )
+                    ],
                     containers=[
                         client.V1Container(
                             name=f"odoo-{self.name}",
                             image=image,
-                            command=["/bin/bash", "-c"],
-                            args=[
-                                """
-                                # Check for requirements.txt and install if present
-                                REQUIREMENTS_FILE="/mnt/repo/odoo-code/requirements.txt"
-                                if [ -f "$REQUIREMENTS_FILE" ]; then
-                                    echo "Found requirements.txt, installing Python dependencies..."
-
-                                    # Check pip version to determine if we need --break-system-packages
-                                    MAJOR_VERSION=$(pip --version | awk '{print $2}' | cut -d. -f1)
-
-                                    # Install requirements
-                                    set -e  # Exit immediately if a command fails
-                                    if [ "$MAJOR_VERSION" -ge 23 ]; then
-                                        echo "Using pip $MAJOR_VERSION.x with --break-system-packages"
-                                        pip install --break-system-packages -r "$REQUIREMENTS_FILE"
-                                    else
-                                        echo "Using pip $MAJOR_VERSION.x"
-                                        pip install -r "$REQUIREMENTS_FILE"
-                                    fi
-
-                                    echo "Python requirements installed successfully"
-                                else
-                                    echo "No requirements.txt found, skipping Python dependencies installation"
-                                fi
-                                # Start Odoo with the original entrypoint
-                                echo "Starting Odoo..."
-                                exec /entrypoint.sh odoo
-                            """
-                            ],
+                            image_pull_policy="IfNotPresent",
+                            command=["/entrypoint.sh", "odoo"],
                             ports=[
                                 client.V1ContainerPort(
                                     container_port=8069,
@@ -268,6 +257,7 @@ class Deployment(ResourceHandler):
                                         )
                                     ),
                                 ),
+                                python_path_var,
                             ],
                             resources=self.spec.get(
                                 "resources",
@@ -304,4 +294,58 @@ class Deployment(ResourceHandler):
         return client.V1Deployment(
             metadata=metadata,
             spec=spec,
+        )
+
+    def _get_init_container_spec(
+        self,
+        volumes: [client.V1Volume],
+        volumeMounts: [client.V1VolumeMount],
+        python_path_var: client.V1EnvVar,
+    ):
+        python_path = python_path_var.value
+        return client.V1Container(
+            name="pip-install",
+            image=self.spec.get("image", self.defaults.get("odooImage", "odoo:18.0")),
+            image_pull_policy="IfNotPresent",
+            command=["/bin/bash", "-c"],
+            args=[
+                """
+                # Check for requirements.txt and install if present
+                REQUIREMENTS_FILE="/mnt/repo/odoo-code/requirements.txt"
+                if [ -f "$REQUIREMENTS_FILE" ]; then
+                    echo "Found requirements.txt, installing Python dependencies..."
+
+                    # Check pip version to determine if we need --break-system-packages
+                    MAJOR_VERSION=$(pip --version | awk '{print $2}' | cut -d. -f1)
+
+                    # Install requirements
+                    set -e  # Exit immediately if a command fails
+                    if [ "$MAJOR_VERSION" -ge 23 ]; then
+                        echo "Using pip $MAJOR_VERSION.x with --break-system-packages"
+                        pip install --break-system-packages -r "$REQUIREMENTS_FILE" --target "%(python_path)s"
+                    else
+                        echo "Using pip $MAJOR_VERSION.x"
+                        pip install -r "$REQUIREMENTS_FILE" --target "%(python_path)s"
+                    fi
+
+                    echo "Python requirements installed successfully"
+                else
+                    echo "No requirements.txt found, skipping Python dependencies installation"
+                fi
+            """
+                % {"python_path": python_path}
+            ],
+            volumes=volumes,
+            volume_mounts=volumeMounts,
+            affinity=self.spec.get("affinity", self.defaults.get("affinity", {})),
+            tolerations=self.spec.get(
+                "tolerations", self.defaults.get("tolerations", [])
+            ),
+            security_context=client.V1SecurityContext(
+                privileged=True,
+                run_as_user=0,
+                run_as_group=0,
+                fs_group=101,
+            ),
+            env=[python_path_var],
         )
