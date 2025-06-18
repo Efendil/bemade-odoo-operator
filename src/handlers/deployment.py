@@ -109,13 +109,6 @@ class Deployment(ResourceHandler):
 
         volumes, volume_mounts = self.get_volumes_and_mounts()
 
-        # Add Git repository volume mount if configured
-        if self.spec.get("gitProject"):
-            # Mount the entire git repo to /mnt/repo
-            volume_mounts.append(
-                client.V1VolumeMount(name="repo-volume", mount_path="/mnt/repo")
-            )
-
         metadata = client.V1ObjectMeta(
             name=self.name,
             owner_references=[self.owner_reference],
@@ -318,6 +311,18 @@ class Deployment(ResourceHandler):
             ),
         ]
 
+        # Define volume mounts
+        volume_mounts = [
+            client.V1VolumeMount(
+                name="filestore",
+                mount_path="/var/lib/odoo",
+            ),
+            client.V1VolumeMount(
+                name="odoo-conf",
+                mount_path="/etc/odoo",
+            ),
+        ]
+
         # Add Git repository volume if configured
         if self.spec.get("gitProject"):
             volumes += [
@@ -332,21 +337,17 @@ class Deployment(ResourceHandler):
                     empty_dir=client.V1EmptyDirVolumeSource(),
                 ),
             ]
-
-        # Define volume mounts
-        volume_mounts = [
-            client.V1VolumeMount(
-                name="filestore",
-                mount_path="/var/lib/odoo",
-            ),
-            client.V1VolumeMount(
-                name="odoo-conf",
-                mount_path="/etc/odoo",
-            ),
-            client.V1VolumeMount(
-                name="python-deps",
-                mount_path="/mnt/python-deps",
-            ),
-        ]
+            
+            # Add Git repo mount
+            volume_mounts += [
+                client.V1VolumeMount(
+                    name="repo-volume",
+                    mount_path="/mnt/repo",
+                ),
+                client.V1VolumeMount(
+                    name="python-deps",
+                    mount_path="/mnt/python-deps",
+                ),
+            ]
 
         return volumes, volume_mounts
