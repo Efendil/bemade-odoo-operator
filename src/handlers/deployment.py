@@ -53,7 +53,7 @@ class Deployment(ResourceHandler):
 
         logger.debug(f"Deployment {self.name} checking OdooInstance phase: {phase}")
 
-        if phase == "Upgrading":
+        if phase != "Running":
             deployment.spec.replicas = 0
             logger.debug(f"Deployment {self.name} scaled down to 0 replicas")
 
@@ -72,14 +72,6 @@ class Deployment(ResourceHandler):
                 namespace=self.namespace,
                 body=self.resource,
             )
-
-    def scale(self, replicas):
-        """Scale the deployment to the specified number of replicas."""
-        client.AppsV1Api().patch_namespaced_deployment(
-            name=self.name,
-            namespace=self.namespace,
-            body={"spec": {"replicas": replicas}},
-        )
 
     def _get_resource_body(self) -> client.V1Deployment:
         image = self.spec.get("image", self.defaults.get("odooImage", "odoo:18.0"))

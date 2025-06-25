@@ -42,8 +42,6 @@ class JobHandler(ResourceHandler):
         if not self._should_run():
             return
         job_spec = self._get_resource_body()
-        # Scale down the deployment to avoid conflicts
-        self.handler.deployment.scale(0)
         # Create the job
         job = client.BatchV1Api().create_namespaced_job(
             namespace=self.namespace, body=job_spec
@@ -71,7 +69,6 @@ class JobHandler(ResourceHandler):
             status = self.resource.status
             if status.succeeded or status.failed:
                 # Update the OdooInstance status to show the job is completed
-                self.handler.deployment.scale(1)
                 logger.debug(
                     f"{self.status_key} completed. Scaling up deployment {self.handler.deployment.name}"
                 )
