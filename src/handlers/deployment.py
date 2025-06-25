@@ -75,31 +75,11 @@ class Deployment(ResourceHandler):
 
     def scale(self, replicas):
         """Scale the deployment to the specified number of replicas."""
-        try:
-            # Get the current deployment
-            deployment = client.AppsV1Api().read_namespaced_deployment(
-                name=self.name,
-                namespace=self.namespace,
-            )
-            deployment = cast(client.V1Deployment, deployment)
-
-            if not deployment.spec:
-                raise Exception(f"Deployment {self.name} not found, couldn't scale.")
-            # Update the replicas
-            deployment.spec.replicas = replicas
-
-            # Apply the update
-            client.AppsV1Api().patch_namespaced_deployment(
-                name=self.name,
-                namespace=self.namespace,
-                body={"spec": {"replicas": replicas}},
-            )
-
-            return True
-        except client.ApiException as e:
-            if e.status != 404:
-                raise
-            return False
+        client.AppsV1Api().patch_namespaced_deployment(
+            name=self.name,
+            namespace=self.namespace,
+            body={"spec": {"replicas": replicas}},
+        )
 
     def _get_resource_body(self) -> client.V1Deployment:
         image = self.spec.get("image", self.defaults.get("odooImage", "odoo:18.0"))

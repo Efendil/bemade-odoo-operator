@@ -71,6 +71,9 @@ class RestoreJob(JobHandler):
         )
         odoo_container.command = ["/bin/sh", "-c", self._get_restore_script()]
         odoo_container.volume_mounts = volume_mounts
+        # Disable liveness and readiness probes as these jobs can run long
+        odoo_container.liveness_probe = None
+        odoo_container.readiness_probe = None
 
         job_spec = client.V1JobSpec(
             template=client.V1PodTemplateSpec(
