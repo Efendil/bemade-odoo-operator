@@ -155,6 +155,41 @@ class RestoreJob(JobHandler):
             # pg_restore sometimes "fails" with a warning about recreating sequences
             # but it's actually successful, so we ignore the error and make sure to neutralize
             pg_restore -h "$HOST" -p "$PORT" -U "$USER" -d "{target_db}" --no-owner /mnt/backup/dump.sql || true
+            
+            # Re-initialize database parameters after pg_restore using direct SQL
+            psql -h "$HOST" -p "$PORT" -U "$USER" -d "{target_db}" << 'EOF'
+-- Generate new UUIDs and parameters
+DO $$
+DECLARE
+    new_secret TEXT := gen_random_uuid()::text;
+    new_uuid TEXT := gen_random_uuid()::text;
+    current_time TIMESTAMP := NOW();
+BEGIN
+    -- Delete existing parameters that need to be refreshed
+    DELETE FROM ir_config_parameter WHERE key IN (
+        'database.secret',
+        'database.uuid', 
+        'database.create_date',
+        'web.base.url',
+        'base.login_cooldown_after',
+        'base.login_cooldown_duration'
+    );
+    
+    -- Insert fresh parameters
+    INSERT INTO ir_config_parameter (key, value, create_uid, create_date, write_uid, write_date) VALUES
+        ('database.secret', new_secret, 1, current_time, 1, current_time),
+        ('database.uuid', new_uuid, 1, current_time, 1, current_time),
+        ('database.create_date', current_time::text, 1, current_time, 1, current_time),
+        ('web.base.url', 'http://localhost:8069', 1, current_time, 1, current_time),
+        ('base.login_cooldown_after', '10', 1, current_time, 1, current_time),
+        ('base.login_cooldown_duration', '60', 1, current_time, 1, current_time);
+        
+    RAISE NOTICE 'Database parameters re-initialized successfully';
+EXCEPTION
+    WHEN OTHERS THEN
+        RAISE WARNING 'Could not re-initialize database parameters: %', SQLERRM;
+END $$;
+EOF
         elif [ -f /mnt/backup/backup.zip ]; then
             odoo db {opts} load "{target_db}" /mnt/backup/backup.zip || true
         else
