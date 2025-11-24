@@ -150,7 +150,8 @@ class RestoreJob(JobHandler):
 
         export PGPASSWORD=$PASSWORD
         if [ -f /mnt/backup/dump.sql ]; then
-            # Restore using pg_restore
+            # Drop existing database if it exists, then create fresh
+            dropdb -h "$HOST" -p "$PORT" -U "$USER" --if-exists "{target_db}"
             createdb -h "$HOST" -p "$PORT" -U "$USER" "{target_db}"
             # pg_restore sometimes "fails" with a warning about recreating sequences
             # but it's actually successful, so we ignore the error and make sure to neutralize

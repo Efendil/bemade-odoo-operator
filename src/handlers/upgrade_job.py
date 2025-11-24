@@ -21,7 +21,8 @@ class UpgradeJob(JobHandler):
         self.defaults = handler.defaults
         self.upgrade_spec = handler.spec.get("upgrade", {})
         self.modules = self.upgrade_spec.get("modules", [])
-        self.database = self.upgrade_spec.get("database", "")
+        # Generate database name from instance UID instead of requiring it in spec
+        self.database = f"odoo_{handler.uid.replace('-', '_')}"
 
     def handle_create(self):
         super().handle_create()

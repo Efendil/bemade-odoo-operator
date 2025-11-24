@@ -15,6 +15,7 @@ from .service import Service
 from .ingress_routes import IngressRouteHTTPS, IngressRouteWebsocket
 from .upgrade_job import UpgradeJob
 from .restore_job import RestoreJob
+from .database_initialization import DatabaseInitializationHandler
 from .resource_handler import ResourceHandler
 import logging
 from enum import Enum
@@ -64,10 +65,12 @@ class OdooHandler(ResourceHandler):
         self.service = Service(self)
         self.ingress_route_https = IngressRouteHTTPS(self)
         self.ingress_route_websocket = IngressRouteWebsocket(self)
+        self.database_initialization = DatabaseInitializationHandler(self)
         self.upgrade_job = UpgradeJob(self)
         self.restore_job = RestoreJob(self)
 
         # Create handlers list in the correct order for creation/update
+        # DatabaseInitializationHandler must be FIRST to patch the spec before other handlers run
         self.handlers = [
             self.pull_secret,
             self.odoo_user_secret,
@@ -78,17 +81,22 @@ class OdooHandler(ResourceHandler):
             self.service,
             self.ingress_route_https,
             self.ingress_route_websocket,
+            self.database_initialization,
         ]
 
         # The Job handlers are handled separately and not included in the main handlers list
 
     def on_create(self):
+        logging.info(f"Creating OdooInstance {self.name}")
         # Create all resources in the correct order
+        # DatabaseInitializationHandler runs first and may patch the instance with restore spec
         for handler in self.handlers:
             handler.handle_create()
 
-        # Initialize the status to Running
-        self._initialize_status()
+        # Initialize the status to Running for fresh instances
+        # (restore instances will have their status set by the restore job)
+        if not self.spec.get("restore"):
+            self._initialize_status()
 
     def on_update(self):
         """Handle update events for this OdooInstance."""
@@ -143,13 +151,11 @@ class OdooHandler(ResourceHandler):
     def _is_upgrade_request(self):
         """Check if the spec contains a valid upgrade request."""
         upgrade_spec = self.spec.get("upgrade", {})
-        database = upgrade_spec.get("database", "")
         modules = upgrade_spec.get("modules", [])
 
         # Basic validation that this is an upgrade request
-        return (
-            upgrade_spec and database and isinstance(modules, list) and len(modules) > 0
-        )
+        # Database name is now auto-generated from UID, so we don't need to check for it
+        return upgrade_spec and isinstance(modules, list) and len(modules) > 0
 
     def _should_execute_upgrade(self):
         """

@@ -43,15 +43,19 @@ class OdooConf(ResourceHandler):
     def _get_resource_body(self):
         metadata = client.V1ObjectMeta(
             owner_references=[self.owner_reference],
+            namespace=self.namespace,
             name=f"{self.name}-odoo-conf",
         )
         config_options = {
             "data_dir": "/var/lib/odoo",
+            "logfile": "False",
+            "log_level": "info",
             "proxy_mode": "True",
             "addons_path": "/mnt/extra-addons",
             "db_user": base64.b64decode(
                 self.odoo_user_secret.resource.data["username"]
             ).decode(),
+            "list_db": "False",  # Disable database manager
         }
         admin_pw = self.spec.get("adminPassword", "")
         if admin_pw:
