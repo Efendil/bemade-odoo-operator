@@ -142,12 +142,24 @@ class RestoreJob(JobHandler):
             destination = "/mnt/backup/dump.sql"
         script = f"""
         #!/bin/bash
+        set -e
+        echo "Downloading backup from {url}..."
         curl -X POST \
              -F "master_pwd={password}" \
              -F "name={db_name}" \
              -F "backup_format={backup_format}" \
              -o {destination} \
+             -w "HTTP Status: %{{http_code}}\\n" \
+             --fail-with-body \
              {url}
+        
+        echo "Download complete. Checking file..."
+        ls -lh {destination}
+        file {destination}
+        
+        # Show first few bytes to verify it's actually a zip
+        echo "First 100 bytes:"
+        head -c 100 {destination} | od -A x -t x1z -v
         """
         return script
 
@@ -161,9 +173,17 @@ class RestoreJob(JobHandler):
         opts = """--db_host "$HOST" --db_port "$PORT" -r "$USER" -w "$PASSWORD" -c /etc/odoo/odoo.conf"""
         script = f"""
         #!/bin/bash
+        set -x  # Enable command tracing
+        
+        echo "=== Starting restore process ==="
+        echo "Target database: {target_db}"
+        echo "Backup directory contents:"
+        ls -lh /mnt/backup/
+        echo ""
 
         export PGPASSWORD=$PASSWORD
         if [ -f /mnt/backup/dump.sql ]; then
+            echo "Found dump.sql - using pg_restore method"
             # Drop existing database if it exists, then create fresh
             dropdb -h "$HOST" -p "$PORT" -U "$USER" --if-exists "{target_db}"
             createdb -h "$HOST" -p "$PORT" -U "$USER" "{target_db}"
@@ -171,6 +191,7 @@ class RestoreJob(JobHandler):
             # but it's actually successful, so we ignore the error and make sure to neutralize
             pg_restore -h "$HOST" -p "$PORT" -U "$USER" -d "{target_db}" --no-owner /mnt/backup/dump.sql || true
             
+            echo "Running database parameter re-initialization..."
             # Re-initialize database parameters after pg_restore using direct SQL
             psql -h "$HOST" -p "$PORT" -U "$USER" -d "{target_db}" << 'EOF'
 -- Generate new UUIDs and parameters
@@ -204,15 +225,30 @@ EXCEPTION
         RAISE WARNING 'Could not re-initialize database parameters: %', SQLERRM;
 END $$;
 EOF
+            echo "Database parameter re-initialization complete"
         elif [ -f /mnt/backup/backup.zip ]; then
-            odoo db {opts} load "{target_db}" /mnt/backup/backup.zip || true
+            echo "Found backup.zip - using odoo db load method"
+            echo "File info:"
+            file /mnt/backup/backup.zip
+            echo "File size:"
+            ls -lh /mnt/backup/backup.zip
+            echo "First 100 bytes (hex):"
+            head -c 100 /mnt/backup/backup.zip | od -A x -t x1z -v
+            echo ""
+            echo "Running: odoo {opts} db load {target_db} /mnt/backup/backup.zip"
+            odoo {opts} db load "{target_db}" /mnt/backup/backup.zip || true
         else
-            echo "Backup file not found"
+            echo "ERROR: Backup file not found in /mnt/backup/"
+            ls -la /mnt/backup/
             exit 1
         fi
+        
+        echo "=== Restore process complete ==="
         """
         if self.neutralize:
             script += f"""
-            odoo neutralize {opts} -d {target_db}
-            """
+        echo "=== Starting neutralization ==="
+        odoo {opts} neutralize -d {target_db}
+        echo "=== Neutralization complete ==="
+        """
         return script
