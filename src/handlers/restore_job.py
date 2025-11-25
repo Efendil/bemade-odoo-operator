@@ -167,7 +167,6 @@ class RestoreJob(JobHandler):
         """
         target_db = self.target_database
 
-        opts = """--db_host "$HOST" --db_port "$PORT" -r "$USER" -w "$PASSWORD" -c /etc/odoo/odoo.conf"""
         script = f"""
         #!/bin/bash
         set -x  # Enable command tracing
@@ -226,14 +225,14 @@ EOF
         elif [ -f /mnt/backup/backup.zip ]; then
             echo "Found backup.zip - using odoo db load method"
             echo "File info:"
-            file /mnt/backup/backup.zip
+            file /mnt/backup/backup.zip || true
             echo "File size:"
             ls -lh /mnt/backup/backup.zip
             echo "First 100 bytes (hex):"
             head -c 100 /mnt/backup/backup.zip | od -A x -t x1z -v
             echo ""
-            echo "Running: odoo {opts} db load {target_db} /mnt/backup/backup.zip"
-            odoo {opts} db load "{target_db}" /mnt/backup/backup.zip || true
+            echo "Running: odoo db --db_host \\"$HOST\\" --db_port \\"$PORT\\" -r \\"$USER\\" -w \\"$PASSWORD\\" load -f -n \\"{target_db}\\" /mnt/backup/backup.zip"
+            odoo db --db_host "$HOST" --db_port "$PORT" -r "$USER" -w "$PASSWORD" load -f -n "{target_db}" /mnt/backup/backup.zip
         else
             echo "ERROR: Backup file not found in /mnt/backup/"
             ls -la /mnt/backup/
@@ -244,8 +243,6 @@ EOF
         """
         if self.neutralize:
             script += f"""
-        echo "=== Starting neutralization ==="
-        odoo {opts} neutralize -d {target_db}
-        echo "=== Neutralization complete ==="
+        echo "=== Neutralization already done by odoo db load -n flag ==="
         """
         return script
