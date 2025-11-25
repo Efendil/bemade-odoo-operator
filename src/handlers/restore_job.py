@@ -231,8 +231,8 @@ EOF
             echo "First 100 bytes (hex):"
             head -c 100 /mnt/backup/backup.zip | od -A x -t x1z -v
             echo ""
-            echo "Running: odoo db --db_host \\"$HOST\\" --db_port \\"$PORT\\" -r \\"$USER\\" -w \\"$PASSWORD\\" load -f -n \\"{target_db}\\" /mnt/backup/backup.zip"
-            odoo db --db_host "$HOST" --db_port "$PORT" -r "$USER" -w "$PASSWORD" load -f -n "{target_db}" /mnt/backup/backup.zip
+            echo "Running: odoo db --db_host \\"$HOST\\" --db_port \\"$PORT\\" --db_user \\"$USER\\" --db_password \\"$PASSWORD\\" load -f -n \\"{target_db}\\" /mnt/backup/backup.zip"
+            odoo db --db_host "$HOST" --db_port "$PORT" --db_user "$USER" --db_password "$PASSWORD" load -f -n "{target_db}" /mnt/backup/backup.zip
         else
             echo "ERROR: Backup file not found in /mnt/backup/"
             ls -la /mnt/backup/
