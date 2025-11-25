@@ -75,9 +75,23 @@ class RestoreJob(JobHandler):
         odoo_container.liveness_probe = None
         odoo_container.readiness_probe = None
 
+        # Add image pull secret if specified
+        pull_secret = (
+            {
+                "image_pull_secrets": [
+                    client.V1LocalObjectReference(
+                        name=f"{self.spec.get('imagePullSecret')}"
+                    )
+                ]
+            }
+            if self.spec.get("imagePullSecret")
+            else {}
+        )
+
         job_spec = client.V1JobSpec(
             template=client.V1PodTemplateSpec(
                 spec=client.V1PodSpec(
+                    **pull_secret,
                     restart_policy="Never",
                     volumes=volumes,
                     security_context=client.V1PodSecurityContext(
