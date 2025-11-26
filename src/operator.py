@@ -4,6 +4,7 @@ import os
 from kubernetes import client
 from kubernetes.client.rest import ApiException
 from handlers.odoo_handler import OdooHandler
+from handlers.backup_job_handler import OdooBackupJobHandler
 from webhook_server import ServiceModeWebhookServer
 
 # Configure logging
@@ -172,6 +173,44 @@ def validate(body, old, new, *args, **kwargs):
 
 # GitSync CRD handlers removed - GitSync CRD is deprecated
 # Sync jobs are now owned directly by OdooInstance CR and handled by GitSyncJobHandler
+
+
+# ============== OdooBackupJob handlers ==============
+
+
+@kopf.on.create("bemade.org", "v1", "odoobackupjobs")
+def create_backup_job(body, *args, **kwargs):
+    """Handle creation of OdooBackupJob CR."""
+    handler = OdooBackupJobHandler(body, **kwargs)
+    try:
+        handler.on_create()
+    except ApiException as e:
+        _classify_and_raise_api_exception(e)
+    except (kopf.PermanentError, kopf.TemporaryError):
+        raise
+    except Exception as e:
+        raise kopf.TemporaryError(str(e), delay=30)
+
+
+@kopf.on.update("bemade.org", "v1", "odoobackupjobs")
+def update_backup_job(body, *args, **kwargs):
+    """Handle update of OdooBackupJob CR."""
+    handler = OdooBackupJobHandler(body, **kwargs)
+    try:
+        handler.on_update()
+    except ApiException as e:
+        _classify_and_raise_api_exception(e)
+    except (kopf.PermanentError, kopf.TemporaryError):
+        raise
+    except Exception as e:
+        raise kopf.TemporaryError(str(e), delay=30)
+
+
+@kopf.timer("bemade.org", "v1", "odoobackupjobs", interval=15.0)
+def check_backup_job_periodic(body, *args, **kwargs):
+    """Periodic check for OdooBackupJobs to update status from underlying Job."""
+    handler = OdooBackupJobHandler(body, **kwargs)
+    handler.check_job_status()
 
 
 @kopf.timer("bemade.org", "v1", "odooinstances", interval=30.0)
