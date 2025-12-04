@@ -96,12 +96,10 @@ class Deployment(ResourceHandler):
             else {}
         )
 
-        # Get replicas from spec or default to 1
-        replicas = self.spec.get("replicas", 1)
         # Environment variables are now handled by get_environment_variables method
 
         spec = client.V1DeploymentSpec(
-            replicas=replicas,
+            replicas=0, # Set to 0 to allow init/restore jobs to run first
             selector=client.V1LabelSelector(match_labels={"app": self.name}),
             strategy={"type": "Recreate"},
             template=client.V1PodTemplateSpec(
@@ -128,10 +126,6 @@ class Deployment(ResourceHandler):
                             image=image,
                             image_pull_policy="IfNotPresent",
                             command=["/entrypoint.sh", "odoo"],
-                            args=[
-                                "-d",
-                                f"odoo_{self.handler.uid.replace('-', '_')}",
-                            ],
                             ports=[
                                 client.V1ContainerPort(
                                     container_port=8069,
