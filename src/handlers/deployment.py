@@ -53,9 +53,14 @@ class Deployment(ResourceHandler):
 
         logger.debug(f"Deployment {self.name} checking OdooInstance phase: {phase}")
 
-        if phase != "Running":
+        # Only scale up if phase is Running; otherwise keep at 0
+        if phase == "Running":
+            desired_replicas = self.spec.get("replicas", 1)
+            deployment.spec.replicas = desired_replicas
+            logger.debug(f"Deployment {self.name} set to {desired_replicas} replicas")
+        else:
             deployment.spec.replicas = 0
-            logger.debug(f"Deployment {self.name} scaled down to 0 replicas")
+            logger.debug(f"Deployment {self.name} kept at 0 replicas (phase: {phase})")
 
         self._resource = client.AppsV1Api().patch_namespaced_deployment(
             name=self.name,
@@ -96,10 +101,11 @@ class Deployment(ResourceHandler):
             else {}
         )
 
-        # Environment variables are now handled by get_environment_variables method
+        # Start with 0 replicas - init/restore jobs will scale up when complete
+        # For updates, handle_update() will set the correct replica count based on phase
 
         spec = client.V1DeploymentSpec(
-            replicas=0, # Set to 0 to allow init/restore jobs to run first
+            replicas=0,
             selector=client.V1LabelSelector(match_labels={"app": self.name}),
             strategy={"type": "Recreate"},
             template=client.V1PodTemplateSpec(
