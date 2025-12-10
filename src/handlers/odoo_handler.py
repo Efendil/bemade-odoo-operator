@@ -100,14 +100,6 @@ class OdooHandler(ResourceHandler):
         for handler in reversed(self.handlers):
             handler.handle_delete()
 
-    def check_periodic(self):
-        """
-        Periodic checks for this instance.
-        """
-        # Check if the status is somehow out of date
-
-        self._check_status()
-
     def _initialize_status(self):
         """
         Initialize the status for a newly created OdooInstance.
@@ -158,26 +150,6 @@ class OdooHandler(ResourceHandler):
                 )
         except Exception as e:
             logging.warning(f"Failed to call webhook for {self.name}: {e}")
-
-    def _check_status(self):
-        """
-        Check if the status is somehow out of date.
-        """
-        logging.debug(f"Checking status for {self.name}")
-        status = client.CustomObjectsApi().get_namespaced_custom_object_status(
-            group="bemade.org",
-            version="v1",
-            namespace=self.namespace,
-            plural="odooinstances",
-            name=self.name,
-        )
-        phase = cast(dict, status).get("status", {}).get("phase")
-        if not phase:
-            logging.info(f"Status for {self.name} is missing. Initializing.")
-            self._initialize_status()
-            return
-        if phase == "Running":
-            logging.debug(f"Status for {self.name} is Running. No action needed.")
 
     def validate_database_exists(self, database_name):
         """

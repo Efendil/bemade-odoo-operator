@@ -209,22 +209,6 @@ def update_backup_job(body, *args, **kwargs):
         raise kopf.TemporaryError(str(e), delay=30)
 
 
-@kopf.timer("bemade.org", "v1", "odoobackupjobs", interval=15.0)
-def check_backup_job_periodic(body, *args, **kwargs):
-    """Periodic check for OdooBackupJobs to update status from underlying Job."""
-    handler = OdooBackupJobHandler(body, **kwargs)
-    handler.check_job_status()
-
-
-@kopf.timer("bemade.org", "v1", "odooinstances", interval=30.0)
-def check_odoo_instance_periodic(body, *args, **kwargs):
-    """Periodic check for OdooInstances to handle any time-based operations.
-    This delegates to the OdooHandler to perform all periodic checks.
-    """
-    handler = OdooHandler(body, *args, **kwargs)
-    handler.check_periodic()
-
-
 # ============== OdooRestoreJob handlers ==============
 
 
@@ -256,34 +240,23 @@ def update_restore_job(body, *args, **kwargs):
         raise kopf.TemporaryError(str(e), delay=30)
 
 
-@kopf.timer("bemade.org", "v1", "odoorestorejobs", interval=15.0)
-def check_restore_job_periodic(body, *args, **kwargs):
-    """Periodic check for OdooRestoreJobs to update status from underlying Job."""
-    handler = OdooRestoreJobHandler(body, **kwargs)
-    handler.check_job_status()
+# Job owner kinds that we watch for completion
+_JOB_OWNER_KINDS = {
+    "OdooInstance",
+    "OdooBackupJob",
+    "OdooRestoreJob",
+    "OdooUpgradeJob",
+    "OdooInitJob",
+}
 
 
-def _is_odoo_job(body, *args, **kwargs):
-    """Check if the job is a job owned by an OdooInstance."""
-    logger.debug(f"Checking if job is an OdooInstance job")
-
-    # Check job name pattern
-    meta = body.get("metadata")
-    if not meta:
-        return False
-    name = meta.get("name")
-    owner_refs = meta.get("ownerReferences")
-    if not name or not owner_refs:
-        return False
-
-    if "-restore-" not in name and "-backup-" not in name:
-        return False
-
-    # Check owner references to confirm it's owned by an OdooInstance
+def _is_operator_job(body, *args, **kwargs):
+    """Check if the job is owned by one of our CRDs."""
+    owner_refs = body.get("metadata", {}).get("ownerReferences", [])
     for owner in owner_refs:
         if (
-            owner.get("kind") == "OdooInstance"
-            and owner.get("apiVersion") == "bemade.org/v1"
+            owner.get("apiVersion") == "bemade.org/v1"
+            and owner.get("kind") in _JOB_OWNER_KINDS
         ):
             return True
     return False
@@ -320,13 +293,6 @@ def update_upgrade_job(body, *args, **kwargs):
         raise kopf.TemporaryError(str(e), delay=30)
 
 
-@kopf.timer("bemade.org", "v1", "odooupgradejobs", interval=15.0)
-def check_upgrade_job_periodic(body, *args, **kwargs):
-    """Periodic check for OdooUpgradeJobs to update status from underlying Job."""
-    handler = OdooUpgradeJobHandler(body, **kwargs)
-    handler.check_job_status()
-
-
 # ============== OdooInitJob handlers ==============
 
 
@@ -358,36 +324,57 @@ def update_init_job(body, *args, **kwargs):
         raise kopf.TemporaryError(str(e), delay=30)
 
 
-@kopf.timer("bemade.org", "v1", "odooinitjobs", interval=15.0)
-def check_init_job_periodic(body, *args, **kwargs):
-    """Periodic check for OdooInitJobs to update status from underlying Job."""
-    handler = OdooInitJobHandler(body, **kwargs)
-    handler.check_job_status()
-
-
-@kopf.on.field("batch", "v1", "jobs", when=_is_odoo_job, field="status.failed")
-@kopf.on.field("batch", "v1", "jobs", when=_is_odoo_job, field="status.succeeded")
+@kopf.on.field("batch", "v1", "jobs", when=_is_operator_job, field="status.failed")
+@kopf.on.field("batch", "v1", "jobs", when=_is_operator_job, field="status.succeeded")
 def on_job_completion(body, *args, **kwargs):
-    """Handle completion (success or failure) of git sync job owned by OdooInstance."""
-    logger.debug(f"Handling job completion.")
-    owner_refs = [
-        ref
-        for ref in body.get("metadata", {}).get("ownerReferences", [])
-        if ref.get("kind") == "OdooInstance"
-    ]
-    for owner in owner_refs:
-        try:
-            # Get the OdooInstance custom resource
-            instance = client.CustomObjectsApi().get_namespaced_custom_object(
-                "bemade.org",
-                "v1",
-                body.get("metadata", {}).get("namespace"),
-                "odooinstances",
-                owner.get("name"),
-            )
+    """Handle completion (success or failure) of jobs owned by our CRDs."""
+    namespace = body.get("metadata", {}).get("namespace")
+    owner_refs = body.get("metadata", {}).get("ownerReferences", [])
 
-            # Initialize OdooHandler
-            odoo_handler = OdooHandler(body=instance, *args, **kwargs)
-            odoo_handler.handle_job_completion(body)
+    for owner in owner_refs:
+        if owner.get("apiVersion") != "bemade.org/v1":
+            continue
+
+        kind = owner.get("kind")
+        owner_name = owner.get("name")
+
+        try:
+            if kind == "OdooInstance":
+                instance = client.CustomObjectsApi().get_namespaced_custom_object(
+                    "bemade.org", "v1", namespace, "odooinstances", owner_name
+                )
+                odoo_handler = OdooHandler(body=instance, *args, **kwargs)
+                odoo_handler.handle_job_completion(body)
+
+            elif kind == "OdooBackupJob":
+                backup_job = client.CustomObjectsApi().get_namespaced_custom_object(
+                    "bemade.org", "v1", namespace, "odoobackupjobs", owner_name
+                )
+                handler = OdooBackupJobHandler(backup_job, **kwargs)
+                handler.check_job_status()
+
+            elif kind == "OdooRestoreJob":
+                restore_job = client.CustomObjectsApi().get_namespaced_custom_object(
+                    "bemade.org", "v1", namespace, "odoorestorejobs", owner_name
+                )
+                handler = OdooRestoreJobHandler(restore_job, **kwargs)
+                handler.check_job_status()
+
+            elif kind == "OdooUpgradeJob":
+                upgrade_job = client.CustomObjectsApi().get_namespaced_custom_object(
+                    "bemade.org", "v1", namespace, "odooupgradejobs", owner_name
+                )
+                handler = OdooUpgradeJobHandler(upgrade_job, **kwargs)
+                handler.check_job_status()
+
+            elif kind == "OdooInitJob":
+                init_job = client.CustomObjectsApi().get_namespaced_custom_object(
+                    "bemade.org", "v1", namespace, "odooinitjobs", owner_name
+                )
+                handler = OdooInitJobHandler(init_job, **kwargs)
+                handler.check_job_status()
+
         except Exception as e:
-            logger.error(f"Error processing sync job: {e}")
+            logger.error(
+                f"Error processing job completion for {kind}/{owner_name}: {e}"
+            )

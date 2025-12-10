@@ -272,7 +272,7 @@ class OdooInitJobHandler:
                 ),
             ),
             backoff_limit=0,
-            ttl_seconds_after_finished=3600,
+            ttl_seconds_after_finished=900,  # Clean up 15 min after completion
         )
 
         job = client.V1Job(
