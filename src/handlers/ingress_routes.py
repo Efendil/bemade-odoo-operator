@@ -10,16 +10,13 @@ class IngressRoute(ResourceHandler):
         self.operator_ns = handler.operator_ns
         self.tls_cert = handler.tls_cert
 
-    def _get_route_config(self):
-        raise NotImplementedError("Subclasses must implement this method.")
-
     def _read_resource(self):
         return client.CustomObjectsApi().get_namespaced_custom_object(
             group="traefik.io",
             version="v1alpha1",
             namespace=self.namespace,
             plural="ingressroutes",
-            name=self._get_route_name(),
+            name=f"{self.name}-https",
         )
 
     def _build_ingress_route_spec(self):
@@ -39,7 +36,7 @@ class IngressRoute(ResourceHandler):
             "apiVersion": "traefik.io/v1alpha1",
             "kind": "IngressRoute",
             "metadata": {
-                "name": self._get_route_name(),
+                "name": f"{self.name}-https",
                 "ownerReferences": [self.owner_reference],
             },
             "spec": {
@@ -103,10 +100,6 @@ class IngressRoute(ResourceHandler):
             version="v1alpha1",
             namespace=self.namespace,
             plural="ingressroutes",
-            name=self._get_route_name(),
+            name=f"{self.name}-https",
             body=updated_spec,
         )
-
-    def _get_route_name(self):
-        """Return the name of the ingress route."""
-        raise NotImplementedError()
