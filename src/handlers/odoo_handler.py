@@ -11,7 +11,7 @@ from .odoo_conf import OdooConf
 from .tls_cert import TLSCert
 from .deployment import Deployment
 from .service import Service
-from .ingress_routes import IngressRoute
+from .ingress import Ingress
 from .resource_handler import ResourceHandler
 import logging
 from enum import Enum
@@ -58,7 +58,7 @@ class OdooHandler(ResourceHandler):
         self.tls_cert = TLSCert(self)
         self.deployment = Deployment(self)
         self.service = Service(self)
-        self.ingress_route_https = IngressRoute(self)
+        self.ingress = Ingress(self)
 
         # Create handlers list in the correct order for creation/update
         self.handlers = [
@@ -69,7 +69,7 @@ class OdooHandler(ResourceHandler):
             self.tls_cert,
             self.deployment,
             self.service,
-            self.ingress_route_https,
+            self.ingress,
         ]
 
     def on_create(self):

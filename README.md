@@ -11,6 +11,7 @@ A Kubernetes operator for managing Odoo instances at scale. This operator automa
 - **Rolling Updates**: Seamless image updates with zero-downtime deployments
 - **Module Upgrades**: Trigger Odoo module upgrades via CR spec changes
 - **Webhook Notifications**: Get notified of status changes via webhooks
+- **Standard Kubernetes Ingress**: Routes Odoo web (8069) and websocket (8072) traffic without Traefik CRDs
 
 ## Architecture
 
@@ -100,6 +101,7 @@ The main resource for defining an Odoo deployment.
 | `filestore.storageClass` | string | No | `standard` | Storage class for PVC |
 | `ingress.hosts` | []string | Yes | - | List of hostnames |
 | `ingress.issuer` | string | Yes | - | cert-manager ClusterIssuer name |
+| `ingress.class` | string | No | cluster default | Ingress class name (e.g., `traefik`, `nginx`) |
 | `configOptions` | map | No | - | Custom odoo.conf options |
 | `initialization.mode` | string | No | `fresh` | `fresh` or `restore` |
 | `initialization.restore.*` | object | No | - | Restore config (see below) |
