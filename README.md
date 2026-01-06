@@ -302,4 +302,4 @@ docker build -t odoo-operator:dev .
 
 ## License
 
-Proprietary - Bemade Inc.
+LGPL-v3: https://www.gnu.org/licenses/lgpl-3.0.en.html
