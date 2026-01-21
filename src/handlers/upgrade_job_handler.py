@@ -33,6 +33,7 @@ class OdooUpgradeJobHandler:
         # Extract spec fields
         self.odoo_instance_ref = self.spec.get("odooInstanceRef", {})
         self.modules = self.spec.get("modules", [])
+        self.modules_install = self.spec.get("modulesInstall", [])
         self.scheduled_time = self.spec.get("scheduledTime")
         self.webhook = self.spec.get("webhook", {})
 
@@ -189,6 +190,7 @@ class OdooUpgradeJobHandler:
 
         # Format modules list as comma-separated string
         modules_str = ",".join(self.modules)
+        modules_install_str = ",".join(self.modules_install)
 
         # Build environment variables
         db_host = os.environ.get("DB_HOST", "postgres")
@@ -231,6 +233,8 @@ class OdooUpgradeJobHandler:
                 f"--db_password=$(PASSWORD)",
                 "-u",
                 modules_str,
+                "-i",
+                "modules_install_str",
                 "-d",
                 db_name,
                 "--no-http",
