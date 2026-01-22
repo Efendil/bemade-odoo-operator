@@ -222,6 +222,13 @@ class OdooUpgradeJobHandler:
         # Get volumes and mounts from the shared utility (includes filestore and odoo-conf)
         volumes, volume_mounts = get_odoo_volumes_and_mounts(instance_name)
 
+        modules_args = []
+        if modules_str:
+            modules_args.append("-u")
+            modules_args.append(modules_str)
+        if modules_install_str:
+            modules_args.append("-i")
+            modules_args.append(modules_install_str)
         upgrade_container = client.V1Container(
             name="odoo-upgrade",
             image=image,
@@ -231,10 +238,7 @@ class OdooUpgradeJobHandler:
                 f"--db_user=$(USER)",
                 f"--db_port=$(PORT)",
                 f"--db_password=$(PASSWORD)",
-                "-u",
-                modules_str,
-                "-i",
-                modules_install_str,
+                *modules_args,
                 "-d",
                 db_name,
                 "--no-http",

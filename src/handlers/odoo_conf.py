@@ -47,7 +47,7 @@ class OdooConf(ResourceHandler):
         )
         config_options = {
             "data_dir": "/var/lib/odoo",
-            "logfile": "False",
+            "logfile": "",
             "log_level": "info",
             "proxy_mode": "True",
             "addons_path": "/mnt/extra-addons",
@@ -55,6 +55,8 @@ class OdooConf(ResourceHandler):
                 self.odoo_user_secret.resource.data["username"]
             ).decode(),
             "list_db": "False",  # Disable database manager
+            "http_interface": "0.0.0.0",
+            "http_port": "8069",
         }
         admin_pw = self.spec.get("adminPassword", "")
         if admin_pw:
