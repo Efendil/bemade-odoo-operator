@@ -89,3 +89,122 @@ def test_deployment_env_vars_from_secrets_and_env(monkeypatch):
     assert envs["USER"].value_from.secret_key_ref.key == "username"
     assert envs["PASSWORD"].value_from.secret_key_ref.name == "demo-odoo-user"
     assert envs["PASSWORD"].value_from.secret_key_ref.key == "password"
+
+
+def test_deployment_strategy_recreate_default():
+    """Test default deployment strategy is Recreate"""
+    handler = _make_handler(defaults={"odooImage": "odoo:18.0"})
+    dep_handler = Deployment(handler)
+    dep_handler._resource = SimpleNamespace(spec=None)
+    dep = dep_handler._get_resource_body()
+
+    assert dep.spec.strategy.type == "Recreate"
+    assert dep.spec.strategy.rolling_update is None
+
+
+def test_deployment_strategy_recreate_spec():
+    """Test Recreate strategy when specified in spec"""
+    spec = {"strategy": {"type": "Recreate"}}
+    handler = _make_handler(spec=spec, defaults={"odooImage": "odoo:18.0"})
+    dep_handler = Deployment(handler)
+    dep_handler._resource = SimpleNamespace(spec=None)
+    dep = dep_handler._get_resource_body()
+
+    assert dep.spec.strategy.type == "Recreate"
+    assert dep.spec.strategy.rolling_update is None
+
+
+def test_deployment_strategy_rolling_update_default_params():
+    """Test RollingUpdate strategy with default parameters"""
+    spec = {"strategy": {"type": "RollingUpdate"}}
+    handler = _make_handler(spec=spec, defaults={"odooImage": "odoo:18.0"})
+    dep_handler = Deployment(handler)
+    dep_handler._resource = SimpleNamespace(spec=None)
+    dep = dep_handler._get_resource_body()
+
+    assert dep.spec.strategy.type == "RollingUpdate"
+    assert dep.spec.strategy.rolling_update.max_unavailable == "25%"
+    assert dep.spec.strategy.rolling_update.max_surge == "25%"
+
+
+def test_deployment_strategy_rolling_update_custom_params():
+    """Test RollingUpdate strategy with custom parameters"""
+    spec = {
+        "strategy": {
+            "type": "RollingUpdate",
+            "rollingUpdate": {"maxUnavailable": "1", "maxSurge": "2"},
+        }
+    }
+    handler = _make_handler(spec=spec, defaults={"odooImage": "odoo:18.0"})
+    dep_handler = Deployment(handler)
+    dep_handler._resource = SimpleNamespace(spec=None)
+    dep = dep_handler._get_resource_body()
+
+    assert dep.spec.strategy.type == "RollingUpdate"
+    assert dep.spec.strategy.rolling_update.max_unavailable == "1"
+    assert dep.spec.strategy.rolling_update.max_surge == "2"
+
+
+def test_deployment_strategy_rolling_update_from_defaults():
+    """Test RollingUpdate strategy defaults from helm values"""
+    defaults = {
+        "odooImage": "odoo:18.0",
+        "deploymentStrategy": {
+            "type": "RollingUpdate",
+            "rollingUpdate": {"maxUnavailable": "10%", "maxSurge": "20%"},
+        },
+    }
+    handler = _make_handler(defaults=defaults)
+    dep_handler = Deployment(handler)
+    dep_handler._resource = SimpleNamespace(spec=None)
+    dep = dep_handler._get_resource_body()
+
+    assert dep.spec.strategy.type == "RollingUpdate"
+    assert dep.spec.strategy.rolling_update.max_unavailable == "10%"
+    assert dep.spec.strategy.rolling_update.max_surge == "20%"
+
+
+def test_deployment_strategy_spec_overrides_defaults():
+    """Test that spec strategy overrides defaults"""
+    spec = {
+        "strategy": {
+            "type": "RollingUpdate",
+            "rollingUpdate": {"maxUnavailable": "0", "maxSurge": "1"},
+        }
+    }
+    defaults = {
+        "odooImage": "odoo:18.0",
+        "deploymentStrategy": {
+            "type": "Recreate",
+            "rollingUpdate": {"maxUnavailable": "25%", "maxSurge": "25%"},
+        },
+    }
+    handler = _make_handler(spec=spec, defaults=defaults)
+    dep_handler = Deployment(handler)
+    dep_handler._resource = SimpleNamespace(spec=None)
+    dep = dep_handler._get_resource_body()
+
+    assert dep.spec.strategy.type == "RollingUpdate"
+    assert dep.spec.strategy.rolling_update.max_unavailable == "0"
+    assert dep.spec.strategy.rolling_update.max_surge == "1"
+
+
+def test_deployment_strategy_partial_rolling_update_params():
+    """Test RollingUpdate with only some parameters specified"""
+    spec = {
+        "strategy": {
+            "type": "RollingUpdate",
+            "rollingUpdate": {
+                "maxUnavailable": "1"
+                # maxSurge not specified, should use default
+            },
+        }
+    }
+    handler = _make_handler(spec=spec, defaults={"odooImage": "odoo:18.0"})
+    dep_handler = Deployment(handler)
+    dep_handler._resource = SimpleNamespace(spec=None)
+    dep = dep_handler._get_resource_body()
+
+    assert dep.spec.strategy.type == "RollingUpdate"
+    assert dep.spec.strategy.rolling_update.max_unavailable == "1"
+    assert dep.spec.strategy.rolling_update.max_surge == "25%"  # default value

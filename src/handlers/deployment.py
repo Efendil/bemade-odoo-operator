@@ -25,6 +25,37 @@ class Deployment(ResourceHandler):
             namespace=self.namespace,
         )
 
+    def _get_deployment_strategy(self) -> client.V1DeploymentStrategy:
+        """Get the deployment strategy from spec or defaults."""
+        # Get strategy from spec first, then from defaults
+        strategy_spec = self.spec.get("strategy", {})
+        strategy_type = strategy_spec.get(
+            "type", self.defaults.get("deploymentStrategy", {}).get("type", "Recreate")
+        )
+
+        strategy = client.V1DeploymentStrategy(type=strategy_type)
+
+        # Add rollingUpdate configuration if strategy is RollingUpdate
+        if strategy_type == "RollingUpdate":
+            # Get rolling update config from spec first, then defaults
+            rolling_update_spec = strategy_spec.get("rollingUpdate", {})
+            default_rolling_update = self.defaults.get("deploymentStrategy", {}).get(
+                "rollingUpdate", {}
+            )
+
+            rolling_update = client.V1RollingUpdateDeployment(
+                max_unavailable=rolling_update_spec.get(
+                    "maxUnavailable",
+                    default_rolling_update.get("maxUnavailable", "25%"),
+                ),
+                max_surge=rolling_update_spec.get(
+                    "maxSurge", default_rolling_update.get("maxSurge", "25%")
+                ),
+            )
+            strategy.rolling_update = rolling_update
+
+        return strategy
+
     def _get_desired_replicas(self) -> int:
         """Get the desired replica count, preserving current value if deployment exists."""
         if self.resource and self.resource.spec:
@@ -88,7 +119,7 @@ class Deployment(ResourceHandler):
         spec = client.V1DeploymentSpec(
             replicas=self._get_desired_replicas(),
             selector=client.V1LabelSelector(match_labels={"app": self.name}),
-            strategy={"type": "Recreate"},
+            strategy=self._get_deployment_strategy(),
             template=client.V1PodTemplateSpec(
                 metadata=client.V1ObjectMeta(
                     labels={"app": self.name},
