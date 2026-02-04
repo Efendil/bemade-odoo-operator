@@ -1,7 +1,15 @@
+import sys
+from pathlib import Path
 from types import SimpleNamespace
 
 from kubernetes import client
 import pytest
+
+# Ensure src is importable when running pytest from repo root
+ROOT = Path(__file__).resolve().parents[1]
+SRC = ROOT / "src"
+if str(SRC) not in sys.path:
+    sys.path.insert(0, str(SRC))
 
 # PVCHandler lives under handlers.pvc_handler
 from handlers.pvc_handler import PVCHandler
@@ -65,7 +73,8 @@ def test_handle_update_patches(monkeypatch, handler):
     )
     dummy = DummyPVC(handler)
     dummy.handle_update()
-    assert patch_calls["body"].metadata.name == "demo-data"
+    # The patch body is a dictionary, not a Kubernetes object
+    assert patch_calls["body"]["spec"]["resources"]["requests"]["storage"] == "10Gi"
 
 
 def test_get_storage_size_with_spec_path(handler):

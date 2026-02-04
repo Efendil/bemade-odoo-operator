@@ -1,7 +1,7 @@
-import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 import pytest
 
@@ -12,6 +12,7 @@ if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
 from handlers.deployment import Deployment, _parse_int_or_string  # noqa: E402
+from handlers.postgres_clusters import PostgresCluster  # noqa: E402
 
 
 def _make_handler(spec=None, defaults=None, name="test"):
@@ -26,9 +27,20 @@ def _make_handler(spec=None, defaults=None, name="test"):
 
 
 @pytest.fixture(autouse=True)
-def db_env(monkeypatch):
-    monkeypatch.setenv("DB_HOST", "postgres.example")
-    monkeypatch.setenv("DB_PORT", "5432")
+def mock_postgres_cluster():
+    """Mock the postgres cluster for all deployment tests."""
+    mock_cluster = PostgresCluster(
+        name="test-cluster",
+        host="postgres.example",
+        port=5432,
+        admin_user="postgres",
+        admin_password="secret",
+        is_default=True,
+    )
+    with patch(
+        "handlers.deployment.get_cluster_for_instance", return_value=mock_cluster
+    ):
+        yield mock_cluster
 
 
 def test_deployment_defaults_and_ports():
