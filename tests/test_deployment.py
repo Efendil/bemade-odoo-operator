@@ -11,7 +11,7 @@ SRC = ROOT / "src"
 if str(SRC) not in sys.path:
     sys.path.insert(0, str(SRC))
 
-from handlers.deployment import Deployment  # noqa: E402
+from handlers.deployment import Deployment, _parse_int_or_string  # noqa: E402
 
 
 def _make_handler(spec=None, defaults=None, name="test"):
@@ -128,7 +128,7 @@ def test_deployment_strategy_rolling_update_default_params():
 
 
 def test_deployment_strategy_rolling_update_custom_params():
-    """Test RollingUpdate strategy with custom parameters"""
+    """Test RollingUpdate strategy with custom parameters (numeric strings become ints)"""
     spec = {
         "strategy": {
             "type": "RollingUpdate",
@@ -141,8 +141,8 @@ def test_deployment_strategy_rolling_update_custom_params():
     dep = dep_handler._get_resource_body()
 
     assert dep.spec.strategy.type == "RollingUpdate"
-    assert dep.spec.strategy.rolling_update.max_unavailable == "1"
-    assert dep.spec.strategy.rolling_update.max_surge == "2"
+    assert dep.spec.strategy.rolling_update.max_unavailable == 1  # converted to int
+    assert dep.spec.strategy.rolling_update.max_surge == 2  # converted to int
 
 
 def test_deployment_strategy_rolling_update_from_defaults():
@@ -185,8 +185,8 @@ def test_deployment_strategy_spec_overrides_defaults():
     dep = dep_handler._get_resource_body()
 
     assert dep.spec.strategy.type == "RollingUpdate"
-    assert dep.spec.strategy.rolling_update.max_unavailable == "0"
-    assert dep.spec.strategy.rolling_update.max_surge == "1"
+    assert dep.spec.strategy.rolling_update.max_unavailable == 0  # converted to int
+    assert dep.spec.strategy.rolling_update.max_surge == 1  # converted to int
 
 
 def test_deployment_strategy_partial_rolling_update_params():
@@ -206,5 +206,36 @@ def test_deployment_strategy_partial_rolling_update_params():
     dep = dep_handler._get_resource_body()
 
     assert dep.spec.strategy.type == "RollingUpdate"
-    assert dep.spec.strategy.rolling_update.max_unavailable == "1"
-    assert dep.spec.strategy.rolling_update.max_surge == "25%"  # default value
+    assert dep.spec.strategy.rolling_update.max_unavailable == 1  # converted to int
+    assert dep.spec.strategy.rolling_update.max_surge == "25%"  # default value (percentage)
+
+
+# Tests for _parse_int_or_string helper function
+
+
+def test_parse_int_or_string_percentage():
+    """Percentage strings should be kept as-is"""
+    assert _parse_int_or_string("25%") == "25%"
+    assert _parse_int_or_string("0%") == "0%"
+    assert _parse_int_or_string("100%") == "100%"
+
+
+def test_parse_int_or_string_numeric():
+    """Numeric strings should be converted to integers"""
+    assert _parse_int_or_string("0") == 0
+    assert _parse_int_or_string("1") == 1
+    assert _parse_int_or_string("25") == 25
+    assert _parse_int_or_string("100") == 100
+
+
+def test_parse_int_or_string_already_int():
+    """Integers should pass through unchanged"""
+    assert _parse_int_or_string(0) == 0
+    assert _parse_int_or_string(1) == 1
+    assert _parse_int_or_string(25) == 25
+
+
+def test_parse_int_or_string_invalid():
+    """Invalid strings should be kept as-is"""
+    assert _parse_int_or_string("abc") == "abc"
+    assert _parse_int_or_string("1.5") == "1.5"
