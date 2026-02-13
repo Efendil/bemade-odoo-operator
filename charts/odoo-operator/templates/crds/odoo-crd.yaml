@@ -324,6 +324,18 @@ spec:
                     cluster:
                       type: string
                       description: "Name of the PostgreSQL cluster from the postgres-clusters secret. If not specified, uses the cluster marked as default."
+                extraVolumeMounts:
+                  description: Extra volume mounts for the Odoo container
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  type: array
+                extraVolumes:
+                  description: Extra volumes to mount into the Odoo pod
+                  items:
+                    type: object
+                    x-kubernetes-preserve-unknown-fields: true
+                  type: array
                 # NOTE: Database initialization/restore handled via OdooRestoreJob CRD
                 # NOTE: Upgrades handled via OdooUpgradeJob CRD
                 strategy:
