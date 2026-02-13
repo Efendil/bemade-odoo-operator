@@ -338,7 +338,14 @@ def get_odoo_volumes_and_mounts(
             
     if "extraVolumeMounts" in spec:
         for m in spec["extraVolumeMounts"]:
-            volume_mounts.append(client.V1VolumeMount(**m))
+            volume_mounts.append(
+                client.V1VolumeMount(
+                    name=m.get("name"),
+                    mount_path=m.get("mountPath"),
+                    sub_path=m.get("subPath"),
+                    read_only=m.get("readOnly"),
+                )
+            )
 
 
 
