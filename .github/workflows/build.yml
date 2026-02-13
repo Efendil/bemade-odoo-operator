@@ -3,13 +3,13 @@ name: Build and Push Docker Image
 on:
   push:
     branches: [master]
-    tags: ['v*']
+    tags: ["v*"]
   pull_request:
     branches: [master]
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: efendil/bemade-odoo-operator
 
 jobs:
   test:
