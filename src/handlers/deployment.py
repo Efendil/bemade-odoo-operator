@@ -86,7 +86,7 @@ class Deployment(ResourceHandler):
         """Get the desired replica count, preserving current value if deployment exists."""
         if self.resource and self.resource.spec:
             return self.resource.spec.replicas or 0
-        return 0
+        return self.spec.get("replicas", 1)
 
     def _get_probe_paths(self) -> dict:
         """Get the probe paths from spec or defaults.
