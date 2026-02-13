@@ -11,6 +11,8 @@ class PullSecret(ResourceHandler):
         self.operator_ns = handler.operator_ns
 
     def _read_resource(self):
+        if not self.spec.get("imagePullSecret"):
+            return None
         return client.CoreV1Api().read_namespaced_secret(
             name=f"{self.spec.get('imagePullSecret')}",
             namespace=self.namespace,
