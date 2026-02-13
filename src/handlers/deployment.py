@@ -288,24 +288,14 @@ class Deployment(ResourceHandler):
     def get_volumes_and_mounts(
         self,
     ) -> Tuple[List[client.V1Volume], List[client.V1VolumeMount]]:
-        return get_odoo_volumes_and_mounts(self.name)
+        return get_odoo_volumes_and_mounts(self.name, self.spec)
 
 
 def get_odoo_volumes_and_mounts(
-    instance_name: str,
+    instance_name: str, spec: dict
 ) -> Tuple[List[client.V1Volume], List[client.V1VolumeMount]]:
     """
-    Get the standard volumes and volume mounts for an Odoo instance.
-
-    This includes:
-    - filestore PVC: persistent storage for attachments and session data
-    - odoo-conf ConfigMap: Odoo configuration including addons paths
-
-    Args:
-        instance_name: The name of the OdooInstance
-
-    Returns:
-        Tuple of (volumes, volume_mounts) for use in pod specs
+    Get the standard and extra volumes/mounts for an Odoo instance.
     """
     volumes = [
         client.V1Volume(
@@ -332,5 +322,25 @@ def get_odoo_volumes_and_mounts(
             mount_path="/etc/odoo",
         ),
     ]
+    
+    # Handle extra volumes
+    if "extraVolumes" in spec:
+        for v in spec["extraVolumes"]:
+            # Manually construct V1Volume to handle the structure correctly
+            volume_args = {"name": v.get("name")}
+            if "persistentVolumeClaim" in v:
+                pvc_spec = v["persistentVolumeClaim"]
+                volume_args["persistent_volume_claim"] = client.V1PersistentVolumeClaimVolumeSource(
+                    claim_name=pvc_spec.get("claimName")
+                )
+            # Add other volume types here as needed
+            volumes.append(client.V1Volume(**volume_args))
+            
+    if "extraVolumeMounts" in spec:
+        for m in spec["extraVolumeMounts"]:
+            volume_mounts.append(client.V1VolumeMount(**m))
+
+
+
 
     return volumes, volume_mounts

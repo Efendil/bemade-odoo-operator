@@ -50,7 +50,7 @@ class OdooConf(ResourceHandler):
             "logfile": "",
             "log_level": "info",
             "proxy_mode": "True",
-            "addons_path": "/mnt/extra-addons",
+            "addons_path": "/mnt/extra-addons,/usr/lib/python3/dist-packages/odoo/addons",
             "db_user": base64.b64decode(
                 self.odoo_user_secret.resource.data["username"]
             ).decode(),
